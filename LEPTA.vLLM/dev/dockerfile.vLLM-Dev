@@ -1,0 +1,8 @@
+FROM vllm/vllm-openai:latest
+
+ENV VLLM_PORT=8512
+
+EXPOSE 8512
+
+CMD ["/models/Qwen3.5-9B-AWQ-4bit", "--served-model-name", "Qwen3.5-9B-AWQ-4bit-local", "--host", "0.0.0.0", "--port", "8512", "--dtype", "half", "--quantization", "compressed-tensors", "--gpu-memory-utilization", "0.90", "--max-model-len", "5120", "--kv-cache-dtype", "fp8", "--enable-prefix-caching", "--max-num-seqs", "1", "--tensor-parallel-size", "1", "--language-model-only", "--reasoning-parser", "qwen3"]
+

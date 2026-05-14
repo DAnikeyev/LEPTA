@@ -1,0 +1,13 @@
+
+Make a detailed plan for developing current application
+Idea is that you can select your own dashboard and by pressing hotkey make multiple request to selected model. 
+
+Required features:
+1. When you select model in model tab and path to it and choose and their configuration and press deploy proper docker compose file is assambled and saved. Model deploys on the specific port with deploy button using vLLM. As alternative you can add server that is already deployed just by using the adress.
+2. Result rendering window for Chat and Lepta panels:
+Should also support rendering and highlighting code (inside triple ``) and md rendering.
+Panels in lepta should take the most space of window. Sidepanel should be togglable and be able to be reduced to just symbols, like sidebar in RIder for example. They should have a title and response, near title there are buttons to edit custom instructions/name or delete panel. There is a plus button to add panel and you can move them around to order them. General instructions must also be configurable by button in header.
+3. Pressing hotkey should activate Lepta: multiple request with  (doc + request -> response) where doc is currently from exchange buffer.
+4. Presets and models configs should be able to save and delete to {WindowsUserFolder}/AppData/Local/Lepta without users additional folder choose.
+5. UI should be responsive and logs for actions if toggled in settings should also appear in a transparent ovelay in bottom right corner.
+6. App should be responsive and follow good style and UI practices.

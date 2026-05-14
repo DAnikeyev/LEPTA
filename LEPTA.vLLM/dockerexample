@@ -1,0 +1,40 @@
+﻿services:
+  vllm:
+    image: vllm/vllm-openai:latest
+
+    ports:
+      - "8000:8000"
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - "D:/Models/Qwen3.5-9B:/models/active:ro"
+
+    command:
+      - --model
+      - /models/active
+      - --dtype
+      - half
+      - --enforce-eager
+      - --gpu-memory-utilization
+      - "0.92"
+      - --max-model-len
+      - "2048"
+      - --kv-cache-dtype
+      - auto
+      - --cpu-offload-gb
+      - "12"
+      - --max-num-seqs
+      - "1"
+      - --tensor-parallel-size
+      - "1"
+
+volumes:
+  hf_cache:
