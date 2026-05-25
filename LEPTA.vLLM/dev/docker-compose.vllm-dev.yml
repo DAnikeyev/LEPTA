@@ -1,0 +1,34 @@
+services:
+  vllm-dev:
+    build:
+      context: ../..
+      dockerfile: LEPTA.vLLM/dev/dockerfile.vLLM-Dev
+    image: lepta-vllm-dev:latest
+    container_name: lepta-vllm-dev
+    environment:
+      VLLM_PORT: "${VLLM_PORT:-8512}"
+      VLLM_GPU_MEMORY_UTILIZATION: "${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+      VLLM_MAX_MODEL_LEN: "${VLLM_MAX_MODEL_LEN:-8192}"
+      VLLM_DTYPE: "${VLLM_DTYPE:-half}"
+      VLLM_KV_CACHE_DTYPE: "${VLLM_KV_CACHE_DTYPE:-fp8}"
+      VLLM_MAX_NUM_SEQS: "${VLLM_MAX_NUM_SEQS:-5}"
+      VLLM_CPU_OFFLOAD_GB: "${VLLM_CPU_OFFLOAD_GB:-0}"
+      TOKENIZERS_PARALLELISM: "${TOKENIZERS_PARALLELISM:-true}"
+    ports:
+      - "${VLLM_PORT:-8512}:${VLLM_PORT:-8512}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - type: bind
+        source: D:/Models/Qwen3.5-9B-AWQ-4bit
+        target: /models/Qwen3.5-9B-AWQ-4bit
+        read_only: true
+      - hf_cache:/root/.cache/huggingface
+
+volumes:
+  hf_cache:

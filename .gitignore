@@ -5,6 +5,7 @@
 # Visual Studio / Rider
 .vs/
 *.user
+*.DotSettings.user
 *.suo
 *.userosscache
 *.sln.docstates
@@ -13,6 +14,10 @@
 project.lock.json
 project.fragment.lock.json
 artifacts/
-/tools/LEPTA.Tools.SandboxTests
-/.idea
-/.junie
+/tools/LEPTA.Tools.SandboxTests/bin/
+/tools/LEPTA.Tools.SandboxTests/obj/
+/_artifacts*/
+/_build*/
+/_palette*/
+/.idea/
+/.junie/

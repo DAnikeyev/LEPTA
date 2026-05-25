@@ -74,13 +74,18 @@ public sealed class LeptaDashboardStore(AppDataPaths appDataPaths, JsonFileStore
             Id = string.IsNullOrWhiteSpace(dashboard.Id) ? Guid.NewGuid().ToString("N") : dashboard.Id.Trim(),
             Name = string.IsNullOrWhiteSpace(dashboard.Name) ? "Dashboard" : dashboard.Name.Trim(),
             SelectedServerId = string.IsNullOrWhiteSpace(dashboard.SelectedServerId) ? null : dashboard.SelectedServerId.Trim(),
+            SelectedPresetId = string.IsNullOrWhiteSpace(dashboard.SelectedPresetId) ? null : dashboard.SelectedPresetId.Trim(),
             GeneralInstruction = dashboard.GeneralInstruction ?? string.Empty,
+            EnableThinking = dashboard.EnableThinking,
+            Temperature = LeptaSettings.NormalizeTemperature(dashboard.Temperature),
             Panels = dashboard.Panels
                 .Where(panel => panel is not null)
                 .Select(panel => new LeptaPanelDefinition
                 {
                     Name = string.IsNullOrWhiteSpace(panel.Name) ? "Panel" : panel.Name.Trim(),
-                    CustomInstruction = panel.CustomInstruction ?? string.Empty
+                    CustomInstruction = panel.CustomInstruction ?? string.Empty,
+                    AccentColorHex = string.IsNullOrWhiteSpace(panel.AccentColorHex) ? "#2F6FED" : panel.AccentColorHex.Trim(),
+                    Format = LeptaPanelFormats.Normalize(panel.Format)
                 })
                 .ToList()
         };

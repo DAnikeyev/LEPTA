@@ -1,23 +1,52 @@
 using System.Diagnostics;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using LEPTA.Controls;
 using LEPTA.Shared.Models;
 using LEPTA.Shared.Services;
 using LEPTA.Theming;
 using Markdig;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using FlowList = System.Windows.Documents.List;
 using MarkdownBlock = Markdig.Syntax.Block;
+using WpfBlock = System.Windows.Documents.Block;
 using WpfInline = System.Windows.Documents.Inline;
-using Paragraph = System.Windows.Controls.TextBlock;
 
 namespace LEPTA.Services;
 
-internal sealed class MarkdownResponseRenderer
+internal interface IPanelResponseRenderer
 {
-    private const double BaseTextSize = 14;
+    string Format { get; }
+    FlowDocument BuildDocument(string? markdown, double fontSize, MermaidDiagramViewCache? mermaidCache = null);
+}
+
+internal sealed class PanelResponseRendererRegistry
+{
+    private readonly Dictionary<string, IPanelResponseRenderer> renderers;
+
+    public PanelResponseRendererRegistry()
+    {
+        renderers = new Dictionary<string, IPanelResponseRenderer>(StringComparer.OrdinalIgnoreCase)
+        {
+            [LeptaPanelFormats.Markdown] = new MarkdownResponseRenderer(),
+            [LeptaPanelFormats.Mermaid] = new MermaidResponseRenderer(),
+            [LeptaPanelFormats.PlainText] = new PlainTextResponseRenderer()
+        };
+    }
+
+    public IPanelResponseRenderer Resolve(string? format)
+        => renderers.TryGetValue(LeptaPanelFormats.Normalize(format), out var renderer)
+            ? renderer
+            : renderers[LeptaPanelFormats.Markdown];
+}
+
+internal class MarkdownResponseRenderer : IPanelResponseRenderer
+{
     private readonly MarkdownPipeline pipeline;
     private readonly CodeSyntaxHighlighter syntaxHighlighter;
 
@@ -26,7 +55,7 @@ internal sealed class MarkdownResponseRenderer
     {
     }
 
-    public MarkdownResponseRenderer(CodeSyntaxHighlighter syntaxHighlighter)
+    protected MarkdownResponseRenderer(CodeSyntaxHighlighter syntaxHighlighter)
     {
         this.syntaxHighlighter = syntaxHighlighter;
         pipeline = new MarkdownPipelineBuilder()
@@ -34,164 +63,199 @@ internal sealed class MarkdownResponseRenderer
             .Build();
     }
 
-    public IReadOnlyList<UIElement> BuildElements(string? markdown)
+    public virtual string Format => LeptaPanelFormats.Markdown;
+
+    public virtual FlowDocument BuildDocument(string? markdown, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
     {
+        var document = CreateDocumentShell(fontSize);
+
         if (string.IsNullOrWhiteSpace(markdown))
         {
-            return [];
+            return document;
         }
 
-        var document = Markdown.Parse(markdown, pipeline);
-        var elements = new List<UIElement>();
-        foreach (var block in document)
+        var segments = SplitThinkSegments(markdown);
+        var thinkIndex = 0;
+        foreach (var segment in segments)
         {
-            AddBlockElements(elements.Add, block, 0);
+            if (segment.IsThink)
+            {
+                var thinkContent = segment.Text;
+                if (!string.IsNullOrWhiteSpace(thinkContent))
+                {
+                    document.Blocks.Add(BuildThinkExpander(thinkContent, fontSize, thinkIndex++));
+                }
+            }
+            else
+            {
+                var parsedDocument = Markdown.Parse(segment.Text, pipeline);
+                foreach (var block in parsedDocument)
+                {
+                    foreach (var converted in BuildBlocks(block, 0, fontSize, mermaidCache))
+                    {
+                        document.Blocks.Add(converted);
+                    }
+                }
+            }
         }
 
-        return elements;
+        return document;
     }
 
-    private void AddBlockElements(Action<UIElement> addElement, MarkdownBlock block, int nestingDepth)
+    private static readonly Regex ThinkBlockRegex = new(
+        @"(.*?)<think\s*>(.*?)</think\s*>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
+
+    private static readonly Regex IncompleteThinkRegex = new(
+        @"<think\s*>([\s\S]*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private sealed record TextSegment(string Text, bool IsThink);
+
+    private static List<TextSegment> SplitThinkSegments(string text)
+    {
+        var segments = new List<TextSegment>();
+        var remaining = text;
+        while (remaining.Length > 0)
+        {
+            var match = ThinkBlockRegex.Match(remaining);
+            if (match.Success)
+            {
+                var before = match.Groups[1].Value;
+                if (!string.IsNullOrEmpty(before))
+                {
+                    segments.Add(new TextSegment(before, IsThink: false));
+                }
+
+                segments.Add(new TextSegment(match.Groups[2].Value, IsThink: true));
+                remaining = remaining[match.Length..];
+            }
+            else if (IncompleteThinkRegex.IsMatch(remaining))
+            {
+                segments.Add(new TextSegment(remaining, IsThink: false));
+                remaining = string.Empty;
+            }
+            else
+            {
+                segments.Add(new TextSegment(remaining, IsThink: false));
+                remaining = string.Empty;
+            }
+        }
+
+        return segments;
+    }
+
+    private static BlockUIContainer BuildThinkExpander(string thinkContent, double fontSize, int index)
+    {
+        var innerFontSize = Math.Max(10, fontSize - 2);
+        var innerDocument = new FlowDocument
+        {
+            PagePadding = new Thickness(0),
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = innerFontSize,
+            Background = Brushes.Transparent,
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight
+        };
+        innerDocument.SetResourceReference(FlowDocument.ForegroundProperty, ThemeResourceKeys.SecondaryTextBrush);
+        innerDocument.Blocks.Add(new Paragraph(new Run(thinkContent.Trim()))
+        {
+            Margin = new Thickness(0),
+            FontSize = innerFontSize
+        });
+
+        var expander = new Expander
+        {
+            Header = new TextBlock
+            {
+                Text = "Thinking",
+                FontSize = Math.Max(10, fontSize - 1),
+                FontStyle = FontStyles.Italic
+            },
+            Content = new RichTextBox
+            {
+                Document = innerDocument,
+                IsReadOnly = true,
+                IsReadOnlyCaretVisible = false,
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Padding = new Thickness(0),
+                FontSize = innerFontSize
+            },
+            IsExpanded = false,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        expander.SetResourceReference(TextElement.ForegroundProperty, ThemeResourceKeys.SecondaryTextBrush);
+        return new BlockUIContainer(expander);
+    }
+
+    protected FlowDocument CreateDocumentShell(double fontSize)
+    {
+        var document = new FlowDocument
+        {
+            PagePadding = new Thickness(0),
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = fontSize,
+            Background = Brushes.Transparent,
+            TextAlignment = TextAlignment.Left,
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight
+        };
+        document.SetResourceReference(FlowDocument.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
+        return document;
+    }
+
+    protected virtual IEnumerable<WpfBlock> BuildBlocks(MarkdownBlock block, int nestingDepth, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
     {
         switch (block)
         {
             case HeadingBlock headingBlock:
-                addElement(BuildHeading(headingBlock));
-                break;
+                yield return BuildHeading(headingBlock, fontSize);
+                yield break;
             case ParagraphBlock paragraphBlock:
-                addElement(BuildParagraph(paragraphBlock));
-                break;
+                yield return BuildParagraph(paragraphBlock, fontSize);
+                yield break;
             case QuoteBlock quoteBlock:
-                addElement(BuildQuote(quoteBlock, nestingDepth));
-                break;
+                yield return BuildQuote(quoteBlock, nestingDepth, fontSize, mermaidCache);
+                yield break;
             case ListBlock listBlock:
-                addElement(BuildList(listBlock, nestingDepth));
-                break;
+                yield return BuildList(listBlock, nestingDepth, fontSize, mermaidCache);
+                yield break;
             case FencedCodeBlock fencedCodeBlock:
-                addElement(BuildCodeBlock(fencedCodeBlock.Lines.ToString(), fencedCodeBlock.Info));
-                break;
+                yield return BuildCodeBlock(fencedCodeBlock.Lines.ToString(), fencedCodeBlock.Info, fontSize, mermaidCache);
+                yield break;
             case CodeBlock codeBlock:
-                addElement(BuildCodeBlock(codeBlock.Lines.ToString(), null));
-                break;
+                yield return BuildCodeBlock(codeBlock.Lines.ToString(), null, fontSize, mermaidCache);
+                yield break;
             case ThematicBreakBlock:
-                addElement(BuildSeparator());
-                break;
+                yield return BuildSeparator();
+                yield break;
             case HtmlBlock htmlBlock:
-                addElement(BuildPlainTextBlock(htmlBlock.Lines.ToString()));
-                break;
+                yield return BuildPlainTextParagraph(htmlBlock.Lines.ToString(), fontSize, new Thickness(0, 0, 0, 10));
+                yield break;
             case ContainerBlock containerBlock:
                 foreach (var nested in containerBlock)
                 {
-                    AddBlockElements(addElement, nested, nestingDepth + 1);
+                    foreach (var converted in BuildBlocks(nested, nestingDepth + 1, fontSize, mermaidCache))
+                    {
+                        yield return converted;
+                    }
                 }
-                break;
+
+                yield break;
         }
     }
 
-    private UIElement BuildHeading(HeadingBlock block)
-    {
-        var textBlock = CreateTextBlock(new Thickness(0, block.Level == 1 ? 0 : 6, 0, 10));
-        textBlock.FontWeight = FontWeights.SemiBold;
-        textBlock.FontSize = block.Level switch
-        {
-            1 => 24,
-            2 => 21,
-            3 => 19,
-            4 => 17,
-            _ => 15
-        };
-
-        AddInlines(textBlock.Inlines, block.Inline);
-        return textBlock;
-    }
-
-    private UIElement BuildParagraph(ParagraphBlock block)
-    {
-        if (block.Inline is null)
-        {
-            return BuildPlainTextBlock(block.Lines.ToString());
-        }
-
-        var textBlock = CreateTextBlock(new Thickness(0, 0, 0, 10));
-        AddInlines(textBlock.Inlines, block.Inline);
-        return textBlock;
-    }
-
-    private UIElement BuildQuote(QuoteBlock block, int nestingDepth)
-    {
-        var innerPanel = new StackPanel();
-        foreach (var nested in block)
-        {
-            AddBlockElements(element => innerPanel.Children.Add(element), nested, nestingDepth + 1);
-        }
-
-        var border = new Border
-        {
-            BorderThickness = new Thickness(3, 0, 0, 0),
-            Padding = new Thickness(12, 4, 0, 0),
-            Margin = new Thickness(0, 0, 0, 10),
-            Child = innerPanel
-        };
-        border.SetResourceReference(Border.BorderBrushProperty, ThemeResourceKeys.AccentBrush);
-        return border;
-    }
-
-    private UIElement BuildList(ListBlock listBlock, int nestingDepth)
-    {
-        var panel = new StackPanel
-        {
-            Margin = new Thickness(Math.Max(0, nestingDepth - 1) * 16, 0, 0, 10)
-        };
-
-        var itemIndex = int.TryParse(listBlock.OrderedStart, out var parsedStart) ? parsedStart : 1;
-        foreach (var item in listBlock.OfType<ListItemBlock>())
-        {
-            panel.Children.Add(BuildListItem(item, listBlock.IsOrdered, itemIndex, nestingDepth));
-            if (listBlock.IsOrdered)
-            {
-                itemIndex++;
-            }
-        }
-
-        return panel;
-    }
-
-    private UIElement BuildListItem(ListItemBlock item, bool ordered, int itemIndex, int nestingDepth)
-    {
-        var itemGrid = new Grid
-        {
-            Margin = new Thickness(0, 0, 0, 6)
-        };
-        itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        var marker = new TextBlock
-        {
-            Text = ordered ? $"{itemIndex}." : "•",
-            FontSize = BaseTextSize,
-            Margin = new Thickness(0, 0, 10, 0),
-            VerticalAlignment = VerticalAlignment.Top
-        };
-        marker.SetResourceReference(TextBlock.ForegroundProperty, ThemeResourceKeys.SecondaryTextBrush);
-        Grid.SetColumn(marker, 0);
-        itemGrid.Children.Add(marker);
-
-        var contentPanel = new StackPanel();
-        foreach (var nested in item)
-        {
-            AddBlockElements(element => contentPanel.Children.Add(element), nested, nestingDepth + 1);
-        }
-
-        Grid.SetColumn(contentPanel, 1);
-        itemGrid.Children.Add(contentPanel);
-        return itemGrid;
-    }
-
-    private UIElement BuildCodeBlock(string? code, string? language)
+    protected virtual WpfBlock BuildCodeBlock(string? code, string? language, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
     {
         var normalizedCode = (code ?? string.Empty).TrimEnd('\r', '\n');
         var normalizedLanguage = syntaxHighlighter.NormalizeLanguage(language);
-        var lines = syntaxHighlighter.Highlight(normalizedCode, normalizedLanguage);
+        if (string.Equals(NormalizeFenceInfo(normalizedLanguage), "mermaid", StringComparison.OrdinalIgnoreCase))
+        {
+            var trimmedCode = MermaidSourceNormalizer.Normalize(normalizedCode);
+            mermaidCache?.TryGet(trimmedCode, fontSize, out _);
+            return new BlockUIContainer(new MermaidDiagramView(trimmedCode, fontSize, mermaidCache));
+        }
+
+        var highlightedLines = syntaxHighlighter.Highlight(normalizedCode, normalizedLanguage);
 
         var headerPanel = new DockPanel
         {
@@ -214,42 +278,55 @@ internal sealed class MarkdownResponseRenderer
             Content = "Copy code",
             Padding = new Thickness(10, 4, 10, 4),
             MinHeight = 28,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Tag = normalizedCode
+            HorizontalAlignment = HorizontalAlignment.Right
         };
         copyButton.SetResourceReference(Button.StyleProperty, "SecondaryButtonStyle");
         copyButton.Click += (_, _) => CopyToClipboard(normalizedCode, "code block");
         DockPanel.SetDock(copyButton, Dock.Right);
         headerPanel.Children.Add(copyButton);
 
-        var codeTextBlock = new TextBlock
+        var codeDocument = new FlowDocument
         {
+            PagePadding = new Thickness(0),
             FontFamily = new FontFamily("Consolas"),
-            FontSize = 13,
-            TextWrapping = TextWrapping.NoWrap
+            FontSize = Math.Max(10, fontSize - 1),
+            Background = Brushes.Transparent,
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight
         };
-        codeTextBlock.SetResourceReference(TextBlock.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
 
-        for (var lineIndex = 0; lineIndex < lines.Count; lineIndex++)
+        var codeParagraph = new Paragraph
         {
-            foreach (var token in lines[lineIndex].Tokens)
+            Margin = new Thickness(0),
+            LineHeight = Math.Max(12, fontSize + 5)
+        };
+        for (var lineIndex = 0; lineIndex < highlightedLines.Count; lineIndex++)
+        {
+            foreach (var token in highlightedLines[lineIndex].Tokens)
             {
                 var run = new Run(FormatCodeToken(token.Text));
                 run.SetResourceReference(TextElement.ForegroundProperty, ResolveTokenBrushKey(token.Kind));
-                codeTextBlock.Inlines.Add(run);
+                codeParagraph.Inlines.Add(run);
             }
 
-            if (lineIndex < lines.Count - 1)
+            if (lineIndex < highlightedLines.Count - 1)
             {
-                codeTextBlock.Inlines.Add(new LineBreak());
+                codeParagraph.Inlines.Add(new LineBreak());
             }
         }
 
-        var codeScrollViewer = new ScrollViewer
+        codeDocument.Blocks.Add(codeParagraph);
+
+        var codeBox = new RichTextBox
         {
+            Document = codeDocument,
+            IsReadOnly = true,
+            IsReadOnlyCaretVisible = false,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(0),
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = codeTextBlock
+            AcceptsTab = true
         };
 
         var container = new Border
@@ -261,7 +338,7 @@ internal sealed class MarkdownResponseRenderer
                 Children =
                 {
                     headerPanel,
-                    codeScrollViewer
+                    codeBox
                 }
             }
         };
@@ -269,10 +346,90 @@ internal sealed class MarkdownResponseRenderer
         container.SetResourceReference(Border.BorderBrushProperty, ThemeResourceKeys.BorderBrushTheme);
         container.BorderThickness = new Thickness(1);
         container.CornerRadius = new CornerRadius(10);
-        return container;
+        return new BlockUIContainer(container);
     }
 
-    private UIElement BuildSeparator()
+    private WpfBlock BuildHeading(HeadingBlock block, double fontSize)
+    {
+        var paragraph = CreateParagraph(fontSize, new Thickness(0, block.Level == 1 ? 0 : 6, 0, 10));
+        paragraph.FontWeight = FontWeights.SemiBold;
+        paragraph.FontSize = block.Level switch
+        {
+            1 => fontSize + 10,
+            2 => fontSize + 7,
+            3 => fontSize + 5,
+            4 => fontSize + 3,
+            _ => fontSize + 1
+        };
+        AddInlines(paragraph.Inlines, block.Inline, fontSize);
+        return paragraph;
+    }
+
+    private WpfBlock BuildParagraph(ParagraphBlock block, double fontSize)
+    {
+        if (block.Inline is null)
+        {
+            return BuildPlainTextParagraph(block.Lines.ToString(), fontSize, new Thickness(0, 0, 0, 10));
+        }
+
+        var paragraph = CreateParagraph(fontSize, new Thickness(0, 0, 0, 10));
+        AddInlines(paragraph.Inlines, block.Inline, fontSize);
+        return paragraph;
+    }
+
+    private WpfBlock BuildQuote(QuoteBlock block, int nestingDepth, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
+    {
+        var section = new Section
+        {
+            Margin = new Thickness(14 + Math.Max(0, nestingDepth - 1) * 12, 0, 0, 10),
+            BorderThickness = new Thickness(3, 0, 0, 0),
+            Padding = new Thickness(12, 2, 0, 0)
+        };
+        section.SetResourceReference(Section.BorderBrushProperty, ThemeResourceKeys.AccentBrush);
+
+        foreach (var nested in block)
+        {
+            foreach (var converted in BuildBlocks(nested, nestingDepth + 1, fontSize, mermaidCache))
+            {
+                section.Blocks.Add(converted);
+            }
+        }
+
+        return section;
+    }
+
+    private WpfBlock BuildList(ListBlock listBlock, int nestingDepth, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
+    {
+        var list = new FlowList
+        {
+            Margin = new Thickness(Math.Max(0, nestingDepth - 1) * 18, 0, 0, 10),
+            MarkerStyle = listBlock.IsOrdered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc,
+            StartIndex = int.TryParse(listBlock.OrderedStart, out var parsedStart) ? parsedStart : 1
+        };
+
+        foreach (var item in listBlock.OfType<ListItemBlock>())
+        {
+            var listItem = new ListItem();
+            foreach (var nested in item)
+            {
+                foreach (var converted in BuildBlocks(nested, nestingDepth + 1, fontSize, mermaidCache))
+                {
+                    listItem.Blocks.Add(converted);
+                }
+            }
+
+            if (listItem.Blocks.Count == 0)
+            {
+                listItem.Blocks.Add(BuildPlainTextParagraph(string.Empty, fontSize, new Thickness(0)));
+            }
+
+            list.ListItems.Add(listItem);
+        }
+
+        return list;
+    }
+
+    private WpfBlock BuildSeparator()
     {
         var separator = new Border
         {
@@ -280,29 +437,29 @@ internal sealed class MarkdownResponseRenderer
             Margin = new Thickness(0, 6, 0, 12)
         };
         separator.SetResourceReference(Border.BackgroundProperty, ThemeResourceKeys.BorderBrushTheme);
-        return separator;
+        return new BlockUIContainer(separator);
     }
 
-    private UIElement BuildPlainTextBlock(string? text)
+    private Paragraph BuildPlainTextParagraph(string? text, double fontSize, Thickness margin)
     {
-        var textBlock = CreateTextBlock(new Thickness(0, 0, 0, 10));
-        textBlock.Text = text ?? string.Empty;
-        return textBlock;
+        var paragraph = CreateParagraph(fontSize, margin);
+        paragraph.Inlines.Add(new Run(text ?? string.Empty));
+        return paragraph;
     }
 
-    private Paragraph CreateTextBlock(Thickness margin)
+    private Paragraph CreateParagraph(double fontSize, Thickness margin)
     {
-        var textBlock = new Paragraph
+        var paragraph = new Paragraph
         {
-            FontSize = BaseTextSize,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = margin
+            Margin = margin,
+            FontSize = fontSize,
+            LineHeight = Math.Max(12, fontSize + 5)
         };
-        textBlock.SetResourceReference(TextBlock.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
-        return textBlock;
+        paragraph.SetResourceReference(TextElement.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
+        return paragraph;
     }
 
-    private void AddInlines(InlineCollection target, ContainerInline? container)
+    private void AddInlines(InlineCollection target, ContainerInline? container, double fontSize)
     {
         if (container is null)
         {
@@ -320,50 +477,34 @@ internal sealed class MarkdownResponseRenderer
                     target.Add(new LineBreak());
                     break;
                 case CodeInline codeInline:
-                    target.Add(BuildInlineCode(codeInline.Content));
+                    target.Add(BuildInlineCode(codeInline.Content, fontSize));
                     break;
                 case EmphasisInline emphasisInline:
-                    target.Add(BuildEmphasis(emphasisInline));
+                    target.Add(BuildEmphasis(emphasisInline, fontSize));
                     break;
                 case LinkInline linkInline:
-                    target.Add(BuildHyperlink(linkInline));
+                    target.Add(BuildHyperlink(linkInline, fontSize));
                     break;
                 case ContainerInline nestedContainer:
-                    AddInlines(target, nestedContainer);
+                    AddInlines(target, nestedContainer, fontSize);
                     break;
             }
         }
     }
 
-    private WpfInline BuildInlineCode(string? code)
+    private WpfInline BuildInlineCode(string? code, double fontSize)
     {
-        var text = string.IsNullOrEmpty(code) ? string.Empty : code;
-        var textBlock = new TextBlock
+        var span = new Span(new Run(code ?? string.Empty))
         {
-            Text = text,
             FontFamily = new FontFamily("Consolas"),
-            FontSize = 13,
-            Margin = new Thickness(0)
+            FontSize = Math.Max(10, fontSize - 1)
         };
-        textBlock.SetResourceReference(TextBlock.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
-
-        var border = new Border
-        {
-            Child = textBlock,
-            Padding = new Thickness(6, 2, 6, 2),
-            CornerRadius = new CornerRadius(6)
-        };
-        border.SetResourceReference(Border.BackgroundProperty, ThemeResourceKeys.CodeInlineBackgroundBrush);
-        border.SetResourceReference(Border.BorderBrushProperty, ThemeResourceKeys.BorderBrushTheme);
-        border.BorderThickness = new Thickness(1);
-
-        return new InlineUIContainer(border)
-        {
-            BaselineAlignment = BaselineAlignment.Center
-        };
+        span.SetResourceReference(TextElement.BackgroundProperty, ThemeResourceKeys.CodeInlineBackgroundBrush);
+        span.SetResourceReference(TextElement.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
+        return span;
     }
 
-    private Span BuildEmphasis(EmphasisInline emphasisInline)
+    private Span BuildEmphasis(EmphasisInline emphasisInline, double fontSize)
     {
         var span = new Span();
         if (emphasisInline.DelimiterCount >= 2)
@@ -376,16 +517,16 @@ internal sealed class MarkdownResponseRenderer
             span.FontStyle = FontStyles.Italic;
         }
 
-        AddInlines(span.Inlines, emphasisInline);
+        AddInlines(span.Inlines, emphasisInline, fontSize);
         return span;
     }
 
-    private WpfInline BuildHyperlink(LinkInline linkInline)
+    private WpfInline BuildHyperlink(LinkInline linkInline, double fontSize)
     {
         var hyperlink = new Hyperlink();
         hyperlink.SetResourceReference(TextElement.ForegroundProperty, ThemeResourceKeys.LinkBrush);
         hyperlink.TextDecorations = TextDecorations.Underline;
-        AddInlines(hyperlink.Inlines, linkInline);
+        AddInlines(hyperlink.Inlines, linkInline, fontSize);
 
         var target = linkInline.GetDynamicUrl != null
             ? linkInline.GetDynamicUrl() ?? string.Empty
@@ -401,6 +542,23 @@ internal sealed class MarkdownResponseRenderer
         return hyperlink;
     }
 
+    protected static string NormalizeFenceInfo(string? info)
+    {
+        if (string.IsNullOrWhiteSpace(info))
+        {
+            return string.Empty;
+        }
+
+        var value = info.Trim();
+        var separatorIndex = value.IndexOfAny([' ', '\t', ',']);
+        if (separatorIndex >= 0)
+        {
+            value = value[..separatorIndex];
+        }
+
+        return value.Trim().ToLowerInvariant();
+    }
+
     private static void OpenUri(Uri uri)
     {
         try
@@ -412,11 +570,14 @@ internal sealed class MarkdownResponseRenderer
         }
         catch
         {
-            MessageBox.Show($"LEPTA could not open link: {uri.AbsoluteUri}", "Open link failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            UserNotificationService.ShowWarning(
+                "Open link failed",
+                $"LEPTA could not open link: {uri.AbsoluteUri}",
+                source: nameof(MarkdownResponseRenderer));
         }
     }
 
-    private static void CopyToClipboard(string text, string label)
+    protected static void CopyToClipboard(string text, string label)
     {
         try
         {
@@ -424,7 +585,10 @@ internal sealed class MarkdownResponseRenderer
         }
         catch (Exception exception)
         {
-            MessageBox.Show($"LEPTA could not copy the {label}: {exception.Message}", "Copy failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            UserNotificationService.ShowWarning(
+                "Copy failed",
+                $"LEPTA could not copy the {label}: {exception.Message}",
+                source: nameof(MarkdownResponseRenderer));
         }
     }
 
@@ -446,13 +610,163 @@ internal sealed class MarkdownResponseRenderer
             return string.Empty;
         }
 
-        var builder = new System.Text.StringBuilder(value.Length * 2);
+        var builder = new StringBuilder(value.Length * 2);
         foreach (var character in value.Replace("\t", "    ", StringComparison.Ordinal))
         {
             builder.Append(character == ' ' ? '\u00A0' : character);
         }
 
         return builder.ToString();
+    }
+
+    protected static bool ContainsMermaidFence(string? markdown)
+        => !string.IsNullOrWhiteSpace(markdown)
+           && Regex.IsMatch(markdown, @"(^|\r?\n)```\s*mermaid\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    internal static IReadOnlyList<string> CollectMermaidSources(string? markdown, string? panelFormat)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+        {
+            return [];
+        }
+
+        var sources = new List<string>();
+        if (string.Equals(LeptaPanelFormats.Normalize(panelFormat), LeptaPanelFormats.Mermaid, StringComparison.OrdinalIgnoreCase))
+        {
+            var standalone = TryExtractStandaloneMermaidDiagram(markdown);
+            if (!string.IsNullOrWhiteSpace(standalone))
+            {
+                sources.Add(MermaidSourceNormalizer.Normalize(standalone));
+                return sources;
+            }
+
+            if (!ContainsMermaidFence(markdown))
+            {
+                sources.Add(MermaidSourceNormalizer.Normalize(markdown));
+                return sources;
+            }
+        }
+
+        foreach (Match match in Regex.Matches(
+                     markdown,
+                     @"(?:^|\r?\n)```\s*mermaid\s*\r?\n(?<code>[\s\S]*?)\r?\n```",
+                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            var code = MermaidSourceNormalizer.Normalize(match.Groups["code"].Value);
+            if (!string.IsNullOrWhiteSpace(code))
+            {
+                sources.Add(code);
+            }
+        }
+
+        return sources;
+    }
+
+    protected static string? TryExtractStandaloneMermaidDiagram(string? markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+        {
+            return null;
+        }
+
+        var match = Regex.Match(
+            markdown,
+            @"^\s*```(?:\s*mermaid)?\s*\r?\n(?<code>[\s\S]*?)\r?\n```\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var code = match.Groups["code"].Value.Trim();
+        return string.IsNullOrWhiteSpace(code)
+            ? null
+            : code;
+    }
+}
+
+internal sealed class MermaidResponseRenderer : MarkdownResponseRenderer
+{
+    public override string Format => LeptaPanelFormats.Mermaid;
+
+    public override FlowDocument BuildDocument(string? markdown, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+        {
+            return base.BuildDocument(markdown, fontSize, mermaidCache);
+        }
+
+        var standaloneDiagram = MermaidSourceNormalizer.Normalize(TryExtractStandaloneMermaidDiagram(markdown));
+        if (!string.IsNullOrWhiteSpace(standaloneDiagram))
+        {
+            var standaloneDocument = CreateDocumentShell(fontSize);
+            mermaidCache?.TryGet(standaloneDiagram, fontSize, out _);
+            standaloneDocument.Blocks.Add(new BlockUIContainer(new MermaidDiagramView(standaloneDiagram, fontSize, mermaidCache)));
+            return standaloneDocument;
+        }
+
+        if (ContainsMermaidFence(markdown))
+        {
+            return base.BuildDocument(markdown, fontSize, mermaidCache);
+        }
+
+        var document = CreateDocumentShell(fontSize);
+        var trimmedDiagram = MermaidSourceNormalizer.Normalize(markdown);
+        mermaidCache?.TryGet(trimmedDiagram, fontSize, out _);
+        document.Blocks.Add(new BlockUIContainer(new MermaidDiagramView(trimmedDiagram, fontSize, mermaidCache)));
+        return document;
+    }
+
+    protected override WpfBlock BuildCodeBlock(string? code, string? language, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
+    {
+        var normalizedCode = (code ?? string.Empty).Trim();
+        var normalizedLanguage = NormalizeFenceInfo(language);
+        if (!string.IsNullOrWhiteSpace(normalizedCode)
+            && (string.IsNullOrWhiteSpace(normalizedLanguage)
+                || string.Equals(normalizedLanguage, "mermaid", StringComparison.OrdinalIgnoreCase)))
+        {
+            var diagramCode = MermaidSourceNormalizer.Normalize(normalizedCode);
+            mermaidCache?.TryGet(diagramCode, fontSize, out _);
+            return new BlockUIContainer(new MermaidDiagramView(diagramCode, fontSize, mermaidCache));
+        }
+
+        return base.BuildCodeBlock(code, language, fontSize, mermaidCache);
+    }
+}
+
+internal sealed class PlainTextResponseRenderer : IPanelResponseRenderer
+{
+    public string Format => LeptaPanelFormats.PlainText;
+
+    public FlowDocument BuildDocument(string? text, double fontSize, MermaidDiagramViewCache? mermaidCache = null)
+    {
+        var document = new FlowDocument
+        {
+            PagePadding = new Thickness(0),
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = fontSize,
+            Background = Brushes.Transparent,
+            TextAlignment = TextAlignment.Left,
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight
+        };
+        document.SetResourceReference(FlowDocument.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return document;
+        }
+
+        var paragraph = new Paragraph
+        {
+            Margin = new Thickness(0, 0, 0, 10),
+            FontSize = fontSize,
+            LineHeight = Math.Max(12, fontSize + 5)
+        };
+        paragraph.SetResourceReference(TextElement.ForegroundProperty, ThemeResourceKeys.PrimaryTextBrush);
+        paragraph.Inlines.Add(new Run(text));
+        document.Blocks.Add(paragraph);
+
+        return document;
     }
 }
 

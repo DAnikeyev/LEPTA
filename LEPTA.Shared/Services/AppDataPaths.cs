@@ -29,6 +29,8 @@ public sealed class AppDataPaths
 
     public string LogsDirectory => Path.Combine(RootDirectory, "logs");
 
+    public string ChatHistoryFilePath => Path.Combine(RootDirectory, "chat-history.json");
+
     public void EnsureCreated()
     {
         Directory.CreateDirectory(RootDirectory);

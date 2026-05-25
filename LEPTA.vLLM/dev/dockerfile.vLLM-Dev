@@ -1,8 +1,29 @@
 FROM vllm/vllm-openai:latest
 
-ENV VLLM_PORT=8512
+ARG VLLM_PORT=8512
+ARG VLLM_GPU_MEMORY_UTILIZATION=0.91
+ARG VLLM_MAX_MODEL_LEN=8192
+ARG VLLM_DTYPE=half
+ARG VLLM_KV_CACHE_DTYPE=fp8
+ARG VLLM_MAX_NUM_SEQS=5
+ARG VLLM_CPU_OFFLOAD_GB=0
+ARG TOKENIZERS_PARALLELISM=true
+
+ENV NVIDIA_DISABLE_REQUIRE=true \
+	VLLM_PORT=${VLLM_PORT} \
+	VLLM_GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEMORY_UTILIZATION} \
+	VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN} \
+	VLLM_DTYPE=${VLLM_DTYPE} \
+	VLLM_KV_CACHE_DTYPE=${VLLM_KV_CACHE_DTYPE} \
+	VLLM_MAX_NUM_SEQS=${VLLM_MAX_NUM_SEQS} \
+	VLLM_CPU_OFFLOAD_GB=${VLLM_CPU_OFFLOAD_GB} \
+	TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM}
+
+COPY LEPTA.vLLM/dev/entrypoint.vllm-dev.sh /opt/lepta/entrypoint.vllm-dev.sh
+
+RUN chmod +x /opt/lepta/entrypoint.vllm-dev.sh
 
 EXPOSE 8512
 
-CMD ["/models/Qwen3.5-9B-AWQ-4bit", "--served-model-name", "Qwen3.5-9B-AWQ-4bit-local", "--host", "0.0.0.0", "--port", "8512", "--dtype", "half", "--quantization", "compressed-tensors", "--gpu-memory-utilization", "0.90", "--max-model-len", "5120", "--kv-cache-dtype", "fp8", "--enable-prefix-caching", "--max-num-seqs", "1", "--tensor-parallel-size", "1", "--language-model-only", "--reasoning-parser", "qwen3"]
+ENTRYPOINT ["/opt/lepta/entrypoint.vllm-dev.sh"]
 

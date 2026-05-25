@@ -20,6 +20,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         string systemPrompt = DefaultSystemPrompt,
         int maxTokens = 256,
         double temperature = 0.2,
+        VllmRequestOptions? requestOptions = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -41,6 +42,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                 BuildRequestMessages(updatedConversation, systemPrompt),
                 maxTokens,
                 temperature,
+                requestOptions,
                 cancellationToken);
 
             return CreateResult(
@@ -91,6 +93,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         string systemPrompt = DefaultSystemPrompt,
         int maxTokens = 256,
         double temperature = 0.2,
+        VllmRequestOptions? requestOptions = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -107,25 +110,30 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         var requestMessages = BuildRequestMessages(updatedConversation, systemPrompt);
         var builder = new StringBuilder();
 
+        var completionTokens = default(int?);
         try
         {
             try
             {
-                await foreach (var token in chatCompletionClient.StreamChatCompletionAsync(
+                await foreach (var chunk in chatCompletionClient.StreamChatCompletionAsync(
                                    endpoint,
                                    model,
                                    requestMessages,
                                    maxTokens,
                                    temperature,
+                                   requestOptions,
                                    cancellationToken))
                 {
-                    if (string.IsNullOrEmpty(token))
+                    if (!string.IsNullOrEmpty(chunk.Text))
                     {
-                        continue;
+                        builder.Append(chunk.Text);
+                        onToken?.Invoke(chunk.Text);
                     }
 
-                    builder.Append(token);
-                    onToken?.Invoke(token);
+                    if (chunk.CompletionTokens.HasValue)
+                    {
+                        completionTokens = chunk.CompletionTokens;
+                    }
                 }
             }
             catch (InvalidOperationException streamException) when (ShouldRetryWithNonStreamingChat(streamException))
@@ -150,6 +158,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                     requestMessages,
                     maxTokens,
                     temperature,
+                    requestOptions,
                     cancellationToken);
 
                 return CreateResult(
@@ -170,6 +179,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                     requestMessages,
                     maxTokens,
                     temperature,
+                    requestOptions,
                     cancellationToken);
 
                 return CreateResult(
@@ -182,13 +192,17 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
             }
 
             stopwatch.Stop();
-            logger.Log(nameof(VllmConversationService), $"Streaming conversational turn completed for model '{model}'. responseLength={builder.Length}, elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}.");
+            var tokens = completionTokens ?? (builder.Length / 4);
+            var tokensPerSecond = tokens > 0 && stopwatch.Elapsed.TotalSeconds > 0
+                ? tokens / stopwatch.Elapsed.TotalSeconds
+                : 0;
+            logger.Log(nameof(VllmConversationService), $"Streaming conversational turn completed for model '{model}'. responseLength={builder.Length}, elapsedMs={stopwatch.Elapsed.TotalMilliseconds:F0}, tokens={tokens}.");
             return CreateResult(
                 updatedConversation,
                 builder.ToString(),
-                tokens: 0,
+                tokens: tokens,
                 elapsed: stopwatch.Elapsed,
-                tokensPerSecond: 0,
+                tokensPerSecond: tokensPerSecond,
                 usedPromptFallback: false);
         }
         catch (InvalidOperationException chatException) when (ShouldFallbackToTextCompletion(chatException))
@@ -251,6 +265,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         string systemPrompt = "",
         int maxTokens = 700,
         double temperature = 0.2,
+        VllmRequestOptions? requestOptions = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -269,15 +284,19 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         {
             try
             {
-                await foreach (var token in chatCompletionClient.StreamChatCompletionAsync(
+                await foreach (var chunk in chatCompletionClient.StreamChatCompletionAsync(
                                    endpoint,
                                    model,
                                    BuildRequestMessages(conversation, systemPrompt),
                                    maxTokens,
                                    temperature,
+                                   requestOptions,
                                    cancellationToken))
                 {
-                    await channel.Writer.WriteAsync(token, cancellationToken);
+                    if (!string.IsNullOrEmpty(chunk.Text))
+                    {
+                        await channel.Writer.WriteAsync(chunk.Text, cancellationToken);
+                    }
                 }
 
                 channel.Writer.TryComplete();

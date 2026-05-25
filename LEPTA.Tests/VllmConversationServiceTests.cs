@@ -174,6 +174,59 @@ public sealed class VllmConversationServiceTests
     }
 
     [Test]
+    public async Task SendAsync_IncludesCacheSaltAndThinkingFlag_WhenRequested()
+    {
+        string? capturedBody = null;
+
+        using var http = new HttpClient(new StubHttpMessageHandler(async request =>
+        {
+            capturedBody = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "Reasoned reply."
+                          }
+                        }
+                      ],
+                      "usage": {
+                        "completion_tokens": 4
+                      }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }))
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        var service = new VllmConversationService(new VllmChatCompletionClient(http));
+        await service.SendAsync(
+            "http://localhost:8512",
+            "Qwen3.5-9B-local",
+            [],
+            "Think harder.",
+            requestOptions: new VllmRequestOptions
+            {
+                EnableThinking = true,
+                CacheSalt = "shared-prefix-run"
+            });
+
+        Assert.That(capturedBody, Is.Not.Null);
+        using var payload = JsonDocument.Parse(capturedBody!);
+        Assert.That(payload.RootElement.GetProperty("cache_salt").GetString(), Is.EqualTo("shared-prefix-run"));
+        Assert.That(
+            payload.RootElement.GetProperty("chat_template_kwargs").GetProperty("enable_thinking").GetBoolean(),
+            Is.True);
+    }
+
+    [Test]
     public async Task StreamConversationAsync_StreamsAssistantTextAndPreservesConversationHistory()
     {
         HttpRequestMessage? capturedRequest = null;

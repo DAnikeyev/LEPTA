@@ -1,9 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using LEPTA.Controllers.Views;
 using LEPTA.Models;
+using LEPTA.Services;
 using LEPTA.Shared.Diagnostics;
 using LEPTA.Shared.Models;
 using LEPTA.Shared.Services;
@@ -13,104 +16,94 @@ using LEPTA.vLLM.Services;
 
 namespace LEPTA.Controllers;
 
-internal sealed class LeptaController
+internal sealed partial class LeptaController
 {
     private readonly List<LeptaDashboardDefinition> dashboards = [];
-    private readonly ObservableCollection<LeptaPanelState> panels = [];
+    private readonly ObservableCollection<ILeptaPanelState> panels = [];
     private readonly ObservableCollection<LeptaDashboardReference> dashboardEntries = [];
     private readonly ObservableCollection<LeptaPresetReference> presetEntries = [];
-    private readonly ItemsControl panelsItemsControl;
-    private readonly TextBox generalInstructionBox;
-    private readonly ComboBox serverCombo;
-    private readonly TextBox dashboardNameBox;
-    private readonly ComboBox dashboardListCombo;
-    private readonly TextBox presetNameBox;
-    private readonly ComboBox presetListCombo;
-    private readonly TextBlock statusText;
-    private readonly ProgressBar progressBar;
-    private readonly Button runButton;
-    private readonly CheckBox hotkeyCtrlCheckBox;
-    private readonly CheckBox hotkeyAltCheckBox;
-    private readonly CheckBox hotkeyShiftCheckBox;
-    private readonly CheckBox hotkeyWinCheckBox;
-    private readonly ComboBox hotkeyKeyCombo;
-    private readonly TextBlock hotkeyPreviewText;
-    private readonly TextBlock hotkeyRegistrationStatusText;
+    private List<StoredLeptaPreset> cachedPresets = [];
+    private readonly LeptaPanelsViews panelsView;
+    private readonly LeptaInstructionsViews instructions;
+    private readonly LeptaDashboardViews dashboardsView;
+    private readonly LeptaPresetViews presets;
+    private readonly LeptaRunViews run;
+    private readonly LeptaHotkeyViews hotkeys;
     private readonly VllmDeploymentService deploymentService;
     private readonly LeptaRequestOrchestrator requestOrchestrator;
     private readonly LeptaPresetStore presetStore;
     private readonly ILeptaLogger logger;
     private readonly IActionLogEventStream actionLog;
     private readonly SemaphoreSlim runLock = new(1, 1);
+    private readonly SemaphoreSlim clipboardPrefillLock = new(1, 1);
     private CancellationTokenSource? currentRunCts;
+    private TaskCompletionSource<bool>? activeRunCompletion;
+    private ILeptaPanelState? editingPanel;
     private bool isBusy;
     private bool suppressStateChanged;
+    private bool keepVisibleWhenIdle;
+    private ActionLogLevel currentStatusLevel = ActionLogLevel.Info;
     private string currentDashboardId = LeptaDashboardDefinition.DefaultDashboardId;
     private string currentDashboardName = "Default Dashboard";
-    private string? pendingServerId;
+    private string? currentPresetId;
+    private string lastRunClipboardText = string.Empty;
+    private string? lastResolvedModelName;
+    private string lastClipboardPrefillSharedPromptPrefix = string.Empty;
+    private string? lastClipboardPrefillServerId;
+    private string? lastClipboardPrefillModelName;
+    private string? lastClipboardPrefillCacheSalt;
+    private string? preferredServerId;
+    private LeptaSettings settings = LeptaSettings.CreateDefault();
+    private double currentTemperature = LeptaSettings.DefaultTemperature;
 
     public LeptaController(
-        ItemsControl panelsItemsControl,
-        TextBox generalInstructionBox,
-        ComboBox serverCombo,
-        TextBox dashboardNameBox,
-        ComboBox dashboardListCombo,
-        TextBox presetNameBox,
-        ComboBox presetListCombo,
-        TextBlock statusText,
-        ProgressBar progressBar,
-        Button runButton,
-        CheckBox hotkeyCtrlCheckBox,
-        CheckBox hotkeyAltCheckBox,
-        CheckBox hotkeyShiftCheckBox,
-        CheckBox hotkeyWinCheckBox,
-        ComboBox hotkeyKeyCombo,
-        TextBlock hotkeyPreviewText,
-        TextBlock hotkeyRegistrationStatusText,
+        LeptaControllerViews views,
         VllmDeploymentService deploymentService,
         VllmConversationService conversationService,
         LeptaPresetStore presetStore,
-        ILeptaLogger? logger = null,
-        IActionLogEventStream? actionLog = null)
+        LeptaControllerOptions? options = null)
     {
-        this.panelsItemsControl = panelsItemsControl;
-        this.generalInstructionBox = generalInstructionBox;
-        this.serverCombo = serverCombo;
-        this.dashboardNameBox = dashboardNameBox;
-        this.dashboardListCombo = dashboardListCombo;
-        this.presetNameBox = presetNameBox;
-        this.presetListCombo = presetListCombo;
-        this.statusText = statusText;
-        this.progressBar = progressBar;
-        this.runButton = runButton;
-        this.hotkeyCtrlCheckBox = hotkeyCtrlCheckBox;
-        this.hotkeyAltCheckBox = hotkeyAltCheckBox;
-        this.hotkeyShiftCheckBox = hotkeyShiftCheckBox;
-        this.hotkeyWinCheckBox = hotkeyWinCheckBox;
-        this.hotkeyKeyCombo = hotkeyKeyCombo;
-        this.hotkeyPreviewText = hotkeyPreviewText;
-        this.hotkeyRegistrationStatusText = hotkeyRegistrationStatusText;
+        ArgumentNullException.ThrowIfNull(views);
+        options ??= new LeptaControllerOptions();
+
+        panelsView = views.Panels;
+        instructions = views.Instructions;
+        dashboardsView = views.Dashboards;
+        presets = views.Presets;
+        run = views.Run;
+        hotkeys = views.Hotkeys;
         this.deploymentService = deploymentService;
         this.presetStore = presetStore;
-        this.logger = logger ?? NullLeptaLogger.Instance;
-        this.actionLog = actionLog ?? NullActionLogEventStream.Instance;
-        requestOrchestrator = new LeptaRequestOrchestrator(conversationService, this.logger);
+        logger = options.Logger ?? NullLeptaLogger.Instance;
+        actionLog = options.ActionLog ?? NullActionLogEventStream.Instance;
+        requestOrchestrator = new LeptaRequestOrchestrator(conversationService, logger);
 
-        this.panelsItemsControl.ItemsSource = panels;
-        this.dashboardListCombo.ItemsSource = dashboardEntries;
-        this.presetListCombo.ItemsSource = presetEntries;
-        this.generalInstructionBox.TextChanged += (_, _) => OnStateChanged();
-        this.dashboardNameBox.TextChanged += (_, _) =>
+        panelsView.ItemsControl.ItemsSource = panels;
+        dashboardsView.ListCombo.ItemsSource = dashboardEntries;
+        presets.ListCombo.ItemsSource = presetEntries;
+        instructions.GeneralInstructionBox.TextChanged += (_, _) => OnStateChanged();
+        run.ThinkingCheckBox.Checked += (_, _) => OnStateChanged();
+        run.ThinkingCheckBox.Unchecked += (_, _) => OnStateChanged();
+        run.TemperatureTextBox.TextChanged += (_, _) => HandleTemperatureTextChanged();
+        dashboardsView.NameBox.TextChanged += (_, _) =>
         {
             UpdateCurrentDashboardReferenceName();
             OnStateChanged();
         };
-        this.serverCombo.SelectionChanged += (_, _) => OnStateChanged();
-        this.presetNameBox.TextChanged += (_, _) => OnStateChanged();
+        run.ServerCombo.SelectionChanged += (_, _) =>
+        {
+            if (!suppressStateChanged && run.ServerCombo.SelectedItem is VllmServerConfiguration server)
+            {
+                preferredServerId = server.Id;
+            }
+
+            OnStateChanged();
+        };
+        presets.NameBox.TextChanged += (_, _) => OnStateChanged();
         SeedHotkeyKeys();
         ApplyHotkeySettings(HotkeySettings.CreateDefault());
         LoadDashboards([LeptaDashboardDefinition.CreateDefault()], LeptaDashboardDefinition.DefaultDashboardId);
-        statusText.Text = "Configure panel instructions, then run from the button or global clipboard shortcut.";
+        SetStatusMessage("Configure panel instructions, then run from the button or global clipboard shortcut.");
         SetHotkeyRegistrationStatus("The shortcut will be registered when the window finishes loading.");
         StartupWarnings = ReloadPresetEntries();
     }
@@ -119,9 +112,85 @@ internal sealed class LeptaController
 
     public string CurrentDashboardId => currentDashboardId;
 
+    public bool IsBusy => isBusy;
+
+    public string? LastResolvedModelName => lastResolvedModelName;
+
+    public void ApplySettings(LeptaSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        this.settings = new LeptaSettings
+        {
+            EnableSharedPromptPrefill = settings.EnableSharedPromptPrefill,
+            DocumentTrimMode = settings.DocumentTrimMode,
+            DocumentTokenLimit = LeptaSettings.NormalizeDocumentTokenLimit(settings.DocumentTokenLimit)
+        };
+    }
+
+    public LeptaSettings CaptureSettings() => new()
+    {
+        EnableSharedPromptPrefill = settings.EnableSharedPromptPrefill,
+        DocumentTrimMode = settings.DocumentTrimMode,
+        DocumentTokenLimit = settings.DocumentTokenLimit
+    };
+
     public event Action? HotkeySettingsChanged;
 
     public event Action? StateChanged;
+
+    public event Action? PanelMetadataChanged;
+
+    public event Action? ThroughputReset;
+
+    public event Action<int>? ThroughputTokensObserved;
+
+    public event Action? ThroughputCompleted;
+
+    public event Action? ThroughputFirstPanelCompleted;
+
+    public event Action<string>? ThroughputModelResolved;
+
+    public async Task CancelForShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        if (clipboardPrefillLock.CurrentCount == 0)
+        {
+            logger.Log(nameof(LeptaController), "Waiting for the active clipboard cache prefill to finish during shutdown.");
+        }
+
+        if (!isBusy)
+        {
+            await clipboardPrefillLock.WaitAsync(cancellationToken);
+            clipboardPrefillLock.Release();
+            return;
+        }
+
+        logger.Log(nameof(LeptaController), "Cancelling LEPTA run during shutdown.");
+        PublishAction("Cancelling the active LEPTA run before shutdown.", ActionLogLevel.Warning);
+        currentRunCts?.Cancel();
+        var completion = activeRunCompletion?.Task;
+        if (completion is null)
+        {
+            return;
+        }
+
+        await AwaitCompletionAsync(completion, timeout, cancellationToken);
+        await clipboardPrefillLock.WaitAsync(cancellationToken);
+        clipboardPrefillLock.Release();
+    }
+
+    public void CancelCurrentRun()
+    {
+        if (!isBusy || currentRunCts is null || currentRunCts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        run.StopButton.IsEnabled = false;
+        SetStatusMessage("Cancelling LEPTA run...", ActionLogLevel.Warning, keepVisibleWhenIdle: true);
+        logger.Log(nameof(LeptaController), "Cancelling the active LEPTA run from the sidebar stop button.");
+        PublishAction("Cancelling the active LEPTA run.", ActionLogLevel.Warning);
+        currentRunCts.Cancel();
+    }
 
     public void SelectDashboardById(string? dashboardId)
     {
@@ -142,7 +211,8 @@ internal sealed class LeptaController
 
     public void SelectServer(string? serverId)
     {
-        SetServerSelection(serverId);
+        preferredServerId = serverId;
+        ApplyServerSelection();
         HandleServerSelectionChanged();
     }
 
@@ -151,8 +221,8 @@ internal sealed class LeptaController
         suppressStateChanged = true;
         try
         {
-            serverCombo.ItemsSource = servers;
-            SetServerSelection(pendingServerId);
+            run.ServerCombo.ItemsSource = servers;
+            ApplyServerSelection();
         }
         finally
         {
@@ -163,208 +233,29 @@ internal sealed class LeptaController
         logger.Log(nameof(LeptaController), "Bound LEPTA server list.");
     }
 
-    public void LoadDashboards(IEnumerable<LeptaDashboardDefinition> availableDashboards, string? selectedDashboardId)
+    public void RefreshAvailableServers()
     {
-        ArgumentNullException.ThrowIfNull(availableDashboards);
-
-        dashboards.Clear();
-        dashboards.AddRange(
-            availableDashboards
-                .Where(dashboard => dashboard is not null)
-                .Select(CloneDashboard));
-
-        if (dashboards.Count == 0)
+        if (isBusy)
         {
-            dashboards.Add(LeptaDashboardDefinition.CreateDefault());
+            return;
         }
 
-        suppressStateChanged = true;
-        try
+        var previousSelection = run.ServerCombo.SelectedItem as VllmServerConfiguration;
+        ApplyServerSelection();
+        var currentSelection = run.ServerCombo.SelectedItem as VllmServerConfiguration;
+        if (ReferenceEquals(previousSelection, currentSelection))
         {
-            dashboardEntries.Clear();
-            foreach (var dashboard in dashboards)
-            {
-                dashboardEntries.Add(new LeptaDashboardReference
-                {
-                    Id = dashboard.Id,
-                    Name = dashboard.Name
-                });
-            }
-        }
-        finally
-        {
-            suppressStateChanged = false;
-        }
-
-        var selectedDashboard = ResolveDashboard(selectedDashboardId) ?? dashboards[0];
-        ApplyDashboardState(selectedDashboard, notifyStateChanged: false);
-    }
-
-    public IReadOnlyList<LeptaDashboardDefinition> CaptureDashboards()
-    {
-        SyncCurrentDashboardIntoCollection();
-        return dashboards.Select(CloneDashboard).ToList();
-    }
-
-    public void ApplyDashboardState(LeptaDashboardDefinition dashboard, bool notifyStateChanged = true)
-    {
-        ArgumentNullException.ThrowIfNull(dashboard);
-
-        suppressStateChanged = true;
-        try
-        {
-            currentDashboardId = string.IsNullOrWhiteSpace(dashboard.Id) ? LeptaDashboardDefinition.DefaultDashboardId : dashboard.Id.Trim();
-            currentDashboardName = NormalizeDashboardName(dashboard.Name);
-            pendingServerId = dashboard.SelectedServerId;
-            dashboardNameBox.Text = currentDashboardName;
-            SelectDashboard(currentDashboardId);
-            generalInstructionBox.Text = dashboard.GeneralInstruction ?? string.Empty;
-            ReplacePanels(dashboard.Panels);
-            SetServerSelection(pendingServerId);
-        }
-        finally
-        {
-            suppressStateChanged = false;
+            return;
         }
 
         HandleServerSelectionChanged();
-        if (notifyStateChanged)
+        if (currentSelection is not null
+            && !string.IsNullOrWhiteSpace(preferredServerId)
+            && string.Equals(currentSelection.Id, preferredServerId, StringComparison.OrdinalIgnoreCase)
+            && (previousSelection is null
+                || !string.Equals(previousSelection.Id, preferredServerId, StringComparison.OrdinalIgnoreCase)))
         {
-            OnStateChanged();
-        }
-    }
-
-    public LeptaDashboardDefinition CaptureDashboardState() => new()
-    {
-        Id = currentDashboardId,
-        Name = NormalizeDashboardName(dashboardNameBox.Text),
-        SelectedServerId = (serverCombo.SelectedItem as VllmServerConfiguration)?.Id,
-        GeneralInstruction = generalInstructionBox.Text.Trim(),
-        Panels = panels
-            .Select(panel => new LeptaPanelDefinition
-            {
-                Name = panel.Name,
-                CustomInstruction = panel.CustomInstruction
-            })
-            .ToList()
-    };
-
-    public void HandleDashboardSelectionChanged()
-    {
-        if (suppressStateChanged || dashboardListCombo.SelectedItem is not LeptaDashboardReference selectedDashboard)
-        {
-            return;
-        }
-
-        SyncCurrentDashboardIntoCollection();
-        var dashboard = ResolveDashboard(selectedDashboard.Id);
-        if (dashboard is null)
-        {
-            return;
-        }
-
-        ApplyDashboardState(dashboard);
-        logger.Log(nameof(LeptaController), $"Selected dashboard '{dashboard.Name}'. id={dashboard.Id}.");
-    }
-
-    public void SaveDashboard()
-    {
-        SyncCurrentDashboardIntoCollection();
-        statusText.Text = $"Dashboard saved: {currentDashboardName}";
-        logger.Log(nameof(LeptaController), $"Saved dashboard '{currentDashboardName}'. id={currentDashboardId}.");
-        PublishAction($"Dashboard saved: {currentDashboardName}");
-        OnStateChanged();
-    }
-
-    public void SaveDashboardAsNew()
-    {
-        SyncCurrentDashboardIntoCollection();
-        var dashboard = CaptureDashboardState();
-        dashboard.Id = Guid.NewGuid().ToString("N");
-        dashboard.Name = EnsureUniqueDashboardName(NormalizeDashboardName(dashboardNameBox.Text));
-        dashboards.Add(CloneDashboard(dashboard));
-        dashboardEntries.Add(new LeptaDashboardReference
-        {
-            Id = dashboard.Id,
-            Name = dashboard.Name
-        });
-        ApplyDashboardState(dashboard);
-        statusText.Text = $"Dashboard saved as new: {dashboard.Name}";
-        logger.Log(nameof(LeptaController), $"Saved new dashboard '{dashboard.Name}'. id={dashboard.Id}.");
-        PublishAction($"Dashboard saved as new: {dashboard.Name}");
-    }
-
-    public void DeleteSelectedDashboard()
-    {
-        if (dashboardListCombo.SelectedItem is not LeptaDashboardReference selectedDashboard)
-        {
-            statusText.Text = "Select a saved dashboard to delete.";
-            return;
-        }
-
-        if (MessageBox.Show(
-                $"Delete dashboard '{selectedDashboard.Name}'?",
-                "Delete dashboard",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
-        var selectedIndex = dashboardEntries.IndexOf(selectedDashboard);
-        dashboards.RemoveAll(item => string.Equals(item.Id, selectedDashboard.Id, StringComparison.OrdinalIgnoreCase));
-        dashboardEntries.Remove(selectedDashboard);
-
-        if (dashboards.Count == 0)
-        {
-            var defaultDashboard = LeptaDashboardDefinition.CreateDefault();
-            dashboards.Add(defaultDashboard);
-            dashboardEntries.Add(new LeptaDashboardReference
-            {
-                Id = defaultDashboard.Id,
-                Name = defaultDashboard.Name
-            });
-            selectedIndex = 0;
-        }
-
-        var nextIndex = Math.Clamp(selectedIndex, 0, dashboardEntries.Count - 1);
-        var nextDashboardId = dashboardEntries[nextIndex].Id;
-        ApplyDashboardState(ResolveDashboard(nextDashboardId)!, notifyStateChanged: false);
-        statusText.Text = $"Dashboard deleted: {selectedDashboard.Name}";
-        logger.Log(nameof(LeptaController), $"Deleted dashboard '{selectedDashboard.Name}'. id={selectedDashboard.Id}.");
-        PublishAction($"Dashboard deleted: {selectedDashboard.Name}", ActionLogLevel.Warning);
-        OnStateChanged();
-    }
-
-    public HotkeySettings GetHotkeySettings() => new()
-    {
-        Ctrl = hotkeyCtrlCheckBox.IsChecked == true,
-        Alt = hotkeyAltCheckBox.IsChecked == true,
-        Shift = hotkeyShiftCheckBox.IsChecked == true,
-        Win = hotkeyWinCheckBox.IsChecked == true,
-        Key = hotkeyKeyCombo.SelectedItem as string ?? "F8"
-    };
-
-    public void ApplyHotkeySettings(HotkeySettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-
-        suppressStateChanged = true;
-        try
-        {
-            hotkeyCtrlCheckBox.IsChecked = settings.Ctrl;
-            hotkeyAltCheckBox.IsChecked = settings.Alt;
-            hotkeyShiftCheckBox.IsChecked = settings.Shift;
-            hotkeyWinCheckBox.IsChecked = settings.Win;
-            hotkeyKeyCombo.SelectedItem = hotkeyKeyCombo.Items.Cast<object>()
-                .OfType<string>()
-                .FirstOrDefault(item => string.Equals(item, settings.Key, StringComparison.OrdinalIgnoreCase))
-                ?? "F8";
-            hotkeyPreviewText.Text = $"Current shortcut: {BuildHotkeyDisplayText()}";
-        }
-        finally
-        {
-            suppressStateChanged = false;
+            logger.Log(nameof(LeptaController), $"LEPTA server selection restored to saved profile '{currentSelection.Name}'.");
         }
     }
 
@@ -375,54 +266,32 @@ internal sealed class LeptaController
             return;
         }
 
-        var server = serverCombo.SelectedItem as VllmServerConfiguration;
+        var server = run.ServerCombo.SelectedItem as VllmServerConfiguration;
         if (server is null)
         {
-            runButton.IsEnabled = false;
-            statusText.Text = "Select an already deployed HTTP server to run LEPTA from clipboard.";
+            run.RunButton.IsEnabled = false;
+            run.StopButton.IsEnabled = false;
+            run.ThinkingCheckBox.IsEnabled = false;
+            SetStatusMessage("Select a verified model server to run LEPTA from clipboard.");
             return;
         }
 
-        if (!server.UseExistingHttpServer)
+        if (!server.HasEstablishedConnection)
         {
-            runButton.IsEnabled = false;
-            statusText.Text = "LEPTA runs only against 'Already deployed HTTP server' profiles in this stage. Docker-managed local deployment remains later-stage behavior.";
+            run.RunButton.IsEnabled = false;
+            run.StopButton.IsEnabled = false;
+            run.ThinkingCheckBox.IsEnabled = false;
+            SetStatusMessage("LEPTA becomes available after the selected profile responds to /v1/models.");
             return;
         }
 
-        runButton.IsEnabled = true;
-        statusText.Text = $"Ready to run panels from clipboard through {server.Endpoint}. LEPTA will resolve the served model from /v1/models before sending requests.";
-    }
-
-    public void AddPanel()
-    {
-        var nextIndex = panels.Count + 1;
-        panels.Add(CreatePanelState($"Panel {nextIndex}", "Answer with the perspective for this panel."));
-        logger.Log(nameof(LeptaController), $"Added panel {nextIndex}. panelCount={panels.Count}.");
-        OnStateChanged();
-    }
-
-    public void MovePanelLeft(Guid panelId) => MovePanel(panelId, -1);
-
-    public void MovePanelRight(Guid panelId) => MovePanel(panelId, 1);
-
-    public void RemovePanel(Guid panelId)
-    {
-        var panel = panels.FirstOrDefault(item => item.Id == panelId);
-        if (panel is null)
-        {
-            return;
-        }
-
-        DetachPanel(panel);
-        panels.Remove(panel);
-        if (panels.Count == 0)
-        {
-            panels.Add(CreatePanelState("Panel 1", "Answer with the perspective for this panel."));
-        }
-
-        logger.Log(nameof(LeptaController), $"Removed panel '{panel.Name}'. panelCount={panels.Count}.");
-        OnStateChanged();
+        run.RunButton.IsEnabled = true;
+        run.StopButton.IsEnabled = false;
+        run.ThinkingCheckBox.IsEnabled = server.SupportsThinking;
+        run.ThinkingCheckBox.ToolTip = server.SupportsThinking
+            ? "Allow the selected model to spend more effort on panel responses."
+            : "Thinking is available only when the selected model profile advertises reasoning support.";
+        SetStatusMessage($"Ready to run panels from clipboard through {server.Endpoint}. LEPTA will resolve the served model from /v1/models before sending requests.");
     }
 
     public async Task RunFromClipboardAsync(CancellationToken cancellationToken = default)
@@ -430,7 +299,7 @@ internal sealed class LeptaController
         if (!await runLock.WaitAsync(0, cancellationToken))
         {
             currentRunCts?.Cancel();
-            statusText.Text = "Cancelling the previous clipboard run before starting a new one...";
+            SetStatusMessage("Cancelling the previous clipboard run before starting a new one...");
             logger.Log(nameof(LeptaController), "A new LEPTA run requested cancellation of the previous run.");
             PublishAction("Cancelled the previous LEPTA clipboard run so a new one can start.", ActionLogLevel.Warning);
             await runLock.WaitAsync(cancellationToken);
@@ -447,7 +316,7 @@ internal sealed class LeptaController
         }
         catch (Exception exception)
         {
-            statusText.Text = $"Clipboard is unavailable: {exception.Message}";
+            SetStatusMessage($"Clipboard is unavailable: {exception.Message}", ActionLogLevel.Error, keepVisibleWhenIdle: true);
             logger.Log(nameof(LeptaController), $"Clipboard read failed: {exception.Message}");
         }
 
@@ -461,222 +330,222 @@ internal sealed class LeptaController
         }
     }
 
-    public void SavePreset()
+    public async Task RequestClipboardCachePrefillAsync(string? clipboardText, CancellationToken cancellationToken = default)
     {
-        var presetName = NormalizePresetName(presetNameBox.Text);
-        var selectedPreset = presetListCombo.SelectedItem as LeptaPresetReference;
-        var matchingPreset = presetEntries.FirstOrDefault(item => string.Equals(item.Name, presetName, StringComparison.OrdinalIgnoreCase));
-        var presetId = selectedPreset?.Id ?? matchingPreset?.Id ?? Guid.NewGuid().ToString("N");
-        var preset = BuildStoredPreset(presetId, presetName);
-        presetStore.Save(preset);
-        ReloadPresetEntries(preset.Id);
-        presetNameBox.Text = preset.Name;
-        statusText.Text = $"Preset saved: {preset.Name}";
-        logger.Log(nameof(LeptaController), $"Saved preset '{preset.Name}'. id={preset.Id}.");
-        PublishAction($"Preset saved: {preset.Name}");
-        OnStateChanged();
-    }
-
-    public void SavePresetAsNew()
-    {
-        var presetName = EnsureUniquePresetName(NormalizePresetName(presetNameBox.Text));
-        var preset = BuildStoredPreset(Guid.NewGuid().ToString("N"), presetName);
-        presetStore.Save(preset);
-        ReloadPresetEntries(preset.Id);
-        presetNameBox.Text = preset.Name;
-        statusText.Text = $"Preset saved as new: {preset.Name}";
-        logger.Log(nameof(LeptaController), $"Saved new preset '{preset.Name}'. id={preset.Id}.");
-        PublishAction($"Preset saved as new: {preset.Name}");
-        OnStateChanged();
-    }
-
-    public void LoadPreset()
-    {
-        if (!TryLoadSelectedPreset(out var preset))
+        if (string.IsNullOrWhiteSpace(clipboardText) || isBusy)
         {
             return;
         }
 
-        suppressStateChanged = true;
+        if (run.ServerCombo.SelectedItem is not VllmServerConfiguration server || !server.HasEstablishedConnection)
+        {
+            return;
+        }
+
+        var sharedPromptPrefix = LeptaRequestOrchestrator.BuildSharedPromptPrefix(
+            instructions.SystemInstructionBox.Text,
+            clipboardText,
+            instructions.GeneralInstructionBox.Text,
+            settings.DocumentTrimMode,
+            settings.DocumentTokenLimit);
+        if (string.IsNullOrWhiteSpace(sharedPromptPrefix))
+        {
+            return;
+        }
+
+        await clipboardPrefillLock.WaitAsync(cancellationToken);
         try
         {
-            presetNameBox.Text = preset.Name;
+            if (isBusy)
+            {
+                return;
+            }
+
+            var probe = await deploymentService.ProbeHttpServerAsync(server, cancellationToken);
+            if (!probe.IsSuccess || string.IsNullOrWhiteSpace(probe.FirstModelName) || string.IsNullOrWhiteSpace(probe.NormalizedEndpoint))
+            {
+                logger.Log(nameof(LeptaController), $"Clipboard cache prefill skipped because '{server.Name}' is not ready. reason={probe.Message}");
+                return;
+            }
+
+            if (string.Equals(lastClipboardPrefillServerId, server.Id, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(lastClipboardPrefillModelName, probe.FirstModelName, StringComparison.Ordinal)
+                && string.Equals(lastClipboardPrefillSharedPromptPrefix, sharedPromptPrefix, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var cacheSalt = Guid.NewGuid().ToString("N");
+            await requestOrchestrator.PrefillSharedPromptPrefixAsync(
+                probe.NormalizedEndpoint,
+                probe.FirstModelName,
+                sharedPromptPrefix,
+                new VllmRequestOptions
+                {
+                    CacheSalt = cacheSalt
+                },
+                LeptaRequestOrchestrator.ClipboardCachePrefillMaxTokens,
+                cancellationToken);
+
+            lastClipboardPrefillServerId = server.Id;
+            lastClipboardPrefillModelName = probe.FirstModelName;
+            lastClipboardPrefillSharedPromptPrefix = sharedPromptPrefix;
+            lastClipboardPrefillCacheSalt = cacheSalt;
+            logger.Log(nameof(LeptaController), $"Clipboard cache prefill completed for server '{server.Name}' using model '{probe.FirstModelName}'. clipboardLength={clipboardText.Length}, prefixLength={sharedPromptPrefix.Length}.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            logger.Log(nameof(LeptaController), $"Clipboard cache prefill failed. reason={exception.Message}");
         }
         finally
         {
-            suppressStateChanged = false;
+            clipboardPrefillLock.Release();
         }
-
-        ApplyDashboardState(new LeptaDashboardDefinition
-        {
-            Id = currentDashboardId,
-            Name = currentDashboardName,
-            SelectedServerId = (serverCombo.SelectedItem as VllmServerConfiguration)?.Id,
-            GeneralInstruction = preset.GeneralInstruction,
-            Panels = preset.Panels
-        });
-        SelectPreset(preset.Id);
-        statusText.Text = $"Preset loaded: {preset.Name}";
-        logger.Log(nameof(LeptaController), $"Loaded preset '{preset.Name}'. panelCount={panels.Count}.");
-        PublishAction($"Preset loaded: {preset.Name}");
-    }
-
-    public void DeleteSelectedPreset()
-    {
-        if (presetListCombo.SelectedItem is not LeptaPresetReference selectedPreset)
-        {
-            statusText.Text = "Select a saved preset to delete.";
-            return;
-        }
-
-        if (MessageBox.Show(
-                $"Delete preset '{selectedPreset.Name}'?",
-                "Delete preset",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
-        presetStore.Delete(selectedPreset.Id);
-        ReloadPresetEntries();
-        statusText.Text = $"Preset deleted: {selectedPreset.Name}";
-        logger.Log(nameof(LeptaController), $"Deleted preset '{selectedPreset.Name}'. id={selectedPreset.Id}.");
-        PublishAction($"Preset deleted: {selectedPreset.Name}", ActionLogLevel.Warning);
-        OnStateChanged();
-    }
-
-    public void HandleHotkeySettingChanged()
-    {
-        hotkeyPreviewText.Text = $"Current shortcut: {BuildHotkeyDisplayText()}";
-        HotkeySettingsChanged?.Invoke();
-        logger.Log(nameof(LeptaController), $"Hotkey setting changed to '{BuildHotkeyDisplayText()}'.");
-        OnStateChanged();
-    }
-
-    public bool TryGetHotkey(out uint modifiers, out uint virtualKey, out string displayText)
-    {
-        modifiers = 0;
-        virtualKey = 0;
-        displayText = BuildHotkeyDisplayText();
-
-        if (hotkeyCtrlCheckBox.IsChecked == true)
-        {
-            modifiers |= 0x0002;
-        }
-
-        if (hotkeyAltCheckBox.IsChecked == true)
-        {
-            modifiers |= 0x0001;
-        }
-
-        if (hotkeyShiftCheckBox.IsChecked == true)
-        {
-            modifiers |= 0x0004;
-        }
-
-        if (hotkeyWinCheckBox.IsChecked == true)
-        {
-            modifiers |= 0x0008;
-        }
-
-        if (hotkeyKeyCombo.SelectedItem is not string keyName || !Enum.TryParse<Key>(keyName, out var key))
-        {
-            return false;
-        }
-
-        virtualKey = (uint)KeyInterop.VirtualKeyFromKey(key);
-        return virtualKey != 0;
-    }
-
-    public void SetHotkeyRegistrationStatus(string message, bool isError = false)
-    {
-        hotkeyRegistrationStatusText.Text = message;
-        hotkeyRegistrationStatusText.SetResourceReference(
-            TextBlock.ForegroundProperty,
-            isError ? ThemeResourceKeys.ErrorBrush : ThemeResourceKeys.SecondaryTextBrush);
     }
 
     private async Task RunInternalAsync(string? clipboardText, CancellationToken cancellationToken)
     {
-        var server = serverCombo.SelectedItem as VllmServerConfiguration;
+        var server = run.ServerCombo.SelectedItem as VllmServerConfiguration;
         if (server is null)
         {
-            statusText.Text = "Select a target server before running Lepta.";
+            SetStatusMessage("Select a target server before running Lepta.", ActionLogLevel.Warning, keepVisibleWhenIdle: true);
             logger.Log(nameof(LeptaController), "LEPTA run rejected because no server is selected.");
             return;
         }
 
-        if (!server.UseExistingHttpServer)
+        if (!server.HasEstablishedConnection)
         {
-            statusText.Text = "Lepta requests are available only for 'Already deployed HTTP server' profiles.";
-            logger.Log(nameof(LeptaController), $"LEPTA run rejected because '{server.Name}' is not configured as an external HTTP server.");
+            SetStatusMessage("Lepta requests are available only for verified model servers.", ActionLogLevel.Warning, keepVisibleWhenIdle: true);
+            logger.Log(nameof(LeptaController), $"LEPTA run rejected because '{server.Name}' has not established a verified connection.");
             return;
         }
 
         logger.Log(nameof(LeptaController), $"LEPTA run starting for server '{server.Name}'. panelCount={panels.Count}, clipboardLength={clipboardText?.Length ?? 0}.");
         PublishAction($"Starting LEPTA run for {panels.Count} panel(s) on '{server.Name}'.");
+        lastRunClipboardText = clipboardText ?? string.Empty;
+        lastResolvedModelName = null;
+        CancelAllMermaidRepairs();
+        var runPanels = panels.ToArray();
 
-        foreach (var panel in panels)
+        foreach (var panel in runPanels)
         {
             panel.Response = string.Empty;
-            panel.Status = "Waiting...";
+            panel.Status = string.Empty;
+            panel.IsStreaming = false;
+            if (panel is LeptaPanelStateBase panelState)
+            {
+                panelState.ResetRunState();
+            }
         }
 
+        MermaidRenderService.Shared.ClearCache();
+
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var runCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         currentRunCts = linkedCts;
+        activeRunCompletion = runCompletion;
         SetBusyState(true, $"Checking {server.Endpoint}...");
+        ThroughputReset?.Invoke();
+        PanelResponseUpdatePump? updatePump = null;
 
         try
         {
             var probe = await deploymentService.ProbeHttpServerAsync(server, linkedCts.Token);
             if (!probe.IsSuccess || string.IsNullOrWhiteSpace(probe.FirstModelName))
             {
-                statusText.Text = probe.Message;
+                SetStatusMessage(probe.Message, ActionLogLevel.Warning, keepVisibleWhenIdle: true);
                 logger.Log(nameof(LeptaController), $"LEPTA run aborted because server '{server.Name}' failed validation or probing. reason={probe.Message}");
                 return;
             }
 
             var model = probe.FirstModelName;
-            var requests = panels
-                .Select(panel => new LeptaPanelRequest(panel.Name.Trim(), panel.CustomInstruction))
+            lastResolvedModelName = model;
+            ThroughputModelResolved?.Invoke(model);
+            var sharedPromptPrefix = LeptaRequestOrchestrator.BuildSharedPromptPrefix(
+                instructions.SystemInstructionBox.Text,
+                clipboardText,
+                instructions.GeneralInstructionBox.Text,
+                settings.DocumentTrimMode,
+                settings.DocumentTokenLimit);
+            var clipboardPrefillCacheSalt = ResolveClipboardPrefillCacheSalt(server.Id, model, sharedPromptPrefix);
+            var requests = runPanels
+                .Select(panel => new LeptaPanelRequest(panel.Name.Trim(), panel.CustomInstruction, panel.Format))
                 .ToArray();
 
-            for (var i = 0; i < panels.Count; i++)
+            for (var i = 0; i < runPanels.Length; i++)
             {
-                panels[i].Status = $"Generating with {model}...";
+                runPanels[i].Status = string.Empty;
+                runPanels[i].IsStreaming = true;
             }
+
+            updatePump = CreatePanelResponseUpdatePump(runPanels);
+            var firstPanelCompletedReported = false;
 
             var results = await requestOrchestrator.GenerateForPanelsAsync(
                 server.Endpoint,
                 model,
+                instructions.SystemInstructionBox.Text,
                 clipboardText,
-                generalInstructionBox.Text,
+                instructions.GeneralInstructionBox.Text,
                 requests,
                 (index, token) =>
                 {
-                    panelsItemsControl.Dispatcher.Invoke(() =>
+                    var estimatedTokens = EstimateTokenCount(token);
+                    if (estimatedTokens > 0)
                     {
-                        if (index >= 0 && index < panels.Count)
+                        ThroughputTokensObserved?.Invoke(estimatedTokens);
+                    }
+
+                    updatePump.PostToken(index, token);
+                },
+                onPanelCompleted: index =>
+                {
+                    updatePump.FinalizePanel(index, () =>
+                    {
+                        if ((uint)index < (uint)runPanels.Length)
                         {
-                            panels[index].Response += token;
+                            runPanels[index].IsStreaming = false;
                         }
                     });
-                },
-                linkedCts.Token);
 
-            for (var i = 0; i < results.Count && i < panels.Count; i++)
+                    if (!firstPanelCompletedReported)
+                    {
+                        firstPanelCompletedReported = true;
+                        ThroughputFirstPanelCompleted?.Invoke();
+                    }
+                },
+                warmSharedPrefix: settings.EnableSharedPromptPrefill,
+                enableThinking: server.SupportsThinking && run.ThinkingCheckBox.IsChecked == true,
+                documentTrimMode: settings.DocumentTrimMode,
+                documentTokenLimit: settings.DocumentTokenLimit,
+                temperature: currentTemperature,
+                sharedCacheSalt: clipboardPrefillCacheSalt,
+                sharedPrefixAlreadyWarm: !string.IsNullOrWhiteSpace(clipboardPrefillCacheSalt),
+                cancellationToken: linkedCts.Token);
+
+            await CompletePanelResponseUpdatePumpAsync(updatePump);
+            updatePump = null;
+
+            for (var i = 0; i < results.Count && i < runPanels.Length; i++)
             {
                 var result = results[i];
-                var panel = panels[i];
+                var panel = runPanels[i];
+                var generationDuration = result.GenerationDuration ?? TimeSpan.Zero;
+                if (panel is LeptaPanelStateBase panelState)
+                {
+                    panelState.ApplyGenerationOutcome(result.EstimatedVisibleTokenCount, generationDuration, result.Error);
+                }
 
                 panel.Status = string.IsNullOrWhiteSpace(result.Error)
-                    ? "Completed"
+                    ? string.Empty
                     : $"Error: {result.Error}";
+                panel.IsStreaming = false;
 
                 if (!string.IsNullOrWhiteSpace(result.Error))
                 {
-                    panel.Response = result.Error!;
                     PublishAction($"Panel '{panel.Name}' failed: {result.Error}", ActionLogLevel.Error);
                 }
                 else if (string.IsNullOrWhiteSpace(panel.Response))
@@ -690,344 +559,190 @@ internal sealed class LeptaController
                 }
             }
 
-            statusText.Text = $"Generated responses for {results.Count} panel(s) using {model}.";
+            SetStatusMessage($"Generated responses for {results.Count} panel(s) using {model}.");
             logger.Log(nameof(LeptaController), $"LEPTA run completed for server '{server.Name}'. model='{model}', panelCount={results.Count}.");
             PublishAction($"LEPTA run completed on '{server.Name}' with model '{model}'.");
         }
         catch (OperationCanceledException)
         {
-            statusText.Text = "Lepta generation was cancelled.";
+            await CompletePanelResponseUpdatePumpAsync(updatePump);
+            updatePump = null;
+
+            foreach (var panel in runPanels)
+            {
+                panel.IsStreaming = false;
+            }
+
+            SetStatusMessage("Lepta generation was cancelled.", ActionLogLevel.Warning, keepVisibleWhenIdle: true);
             logger.Log(nameof(LeptaController), $"LEPTA run cancelled for server '{server.Name}'.");
             PublishAction("LEPTA generation was cancelled.", ActionLogLevel.Warning);
         }
         catch (Exception exception)
         {
-            statusText.Text = exception.Message;
+            await CompletePanelResponseUpdatePumpAsync(updatePump);
+            updatePump = null;
+
+            foreach (var panel in runPanels)
+            {
+                panel.IsStreaming = false;
+                if (panel is LeptaPanelStateBase panelState)
+                {
+                    panelState.ApplyGenerationOutcome(EstimateTokenCount(panel.Response), TimeSpan.Zero, exception.Message);
+                }
+            }
+
+            SetStatusMessage(exception.Message, ActionLogLevel.Error, keepVisibleWhenIdle: true);
             logger.Log(nameof(LeptaController), $"LEPTA run failed for server '{server.Name}'. reason={exception.Message}");
             PublishAction($"LEPTA run failed for '{server.Name}': {exception.Message}", ActionLogLevel.Error);
         }
         finally
         {
+            await CompletePanelResponseUpdatePumpAsync(updatePump);
+
             if (ReferenceEquals(currentRunCts, linkedCts))
             {
                 currentRunCts = null;
             }
 
-            SetBusyState(false, statusText.Text);
-        }
-    }
-
-    private StoredLeptaPreset BuildStoredPreset(string presetId, string presetName) => new()
-    {
-        Id = presetId,
-        Name = presetName,
-        GeneralInstruction = generalInstructionBox.Text.Trim(),
-        Panels = panels
-            .Select(panel => new LeptaPanelDefinition
+            if (ReferenceEquals(activeRunCompletion, runCompletion))
             {
-                Name = panel.Name,
-                CustomInstruction = panel.CustomInstruction
-            })
-            .ToList()
-    };
-
-    private bool TryLoadSelectedPreset(out StoredLeptaPreset preset)
-    {
-        if (presetListCombo.SelectedItem is not LeptaPresetReference selectedPreset)
-        {
-            statusText.Text = "Select a saved preset to load.";
-            preset = null!;
-            return false;
-        }
-
-        var result = presetStore.LoadAll();
-        foreach (var warning in result.Warnings)
-        {
-            logger.Log(nameof(LeptaController), warning);
-        }
-
-        preset = result.Value.FirstOrDefault(item => string.Equals(item.Id, selectedPreset.Id, StringComparison.OrdinalIgnoreCase))!;
-        if (preset is null)
-        {
-            statusText.Text = $"Preset '{selectedPreset.Name}' is no longer available.";
-            ReloadPresetEntries();
-            return false;
-        }
-
-        return true;
-    }
-
-    private IReadOnlyList<string> ReloadPresetEntries(string? selectedPresetId = null)
-    {
-        var selectedId = selectedPresetId ?? (presetListCombo.SelectedItem as LeptaPresetReference)?.Id;
-        var result = presetStore.LoadAll();
-        suppressStateChanged = true;
-        try
-        {
-            presetEntries.Clear();
-            foreach (var preset in result.Value.OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                presetEntries.Add(new LeptaPresetReference
-                {
-                    Id = preset.Id,
-                    Name = preset.Name
-                });
+                activeRunCompletion = null;
             }
 
-            SelectPreset(selectedId);
-        }
-        finally
-        {
-            suppressStateChanged = false;
-        }
+            runCompletion.TrySetResult(true);
 
-        foreach (var warning in result.Warnings)
-        {
-            logger.Log(nameof(LeptaController), warning);
-        }
-
-        return result.Warnings;
-    }
-
-    private void SelectPreset(string? presetId)
-    {
-        presetListCombo.SelectedItem = string.IsNullOrWhiteSpace(presetId)
-            ? null
-            : presetEntries.FirstOrDefault(item => string.Equals(item.Id, presetId, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private void SelectDashboard(string? dashboardId)
-    {
-        dashboardListCombo.SelectedItem = string.IsNullOrWhiteSpace(dashboardId)
-            ? null
-            : dashboardEntries.FirstOrDefault(item => string.Equals(item.Id, dashboardId, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private LeptaDashboardDefinition? ResolveDashboard(string? dashboardId)
-        => string.IsNullOrWhiteSpace(dashboardId)
-            ? dashboards.FirstOrDefault()
-            : dashboards.FirstOrDefault(item => string.Equals(item.Id, dashboardId, StringComparison.OrdinalIgnoreCase))
-              ?? dashboards.FirstOrDefault();
-
-    private void SyncCurrentDashboardIntoCollection()
-    {
-        var snapshot = CloneDashboard(CaptureDashboardState());
-        currentDashboardId = snapshot.Id;
-        currentDashboardName = snapshot.Name;
-
-        var existingIndex = dashboards.FindIndex(item => string.Equals(item.Id, snapshot.Id, StringComparison.OrdinalIgnoreCase));
-        if (existingIndex >= 0)
-        {
-            dashboards[existingIndex] = snapshot;
-        }
-        else
-        {
-            dashboards.Add(snapshot);
-            dashboardEntries.Add(new LeptaDashboardReference
-            {
-                Id = snapshot.Id,
-                Name = snapshot.Name
-            });
-        }
-
-        UpdateCurrentDashboardReferenceName();
-    }
-
-    private void UpdateCurrentDashboardReferenceName()
-    {
-        var reference = dashboardEntries.FirstOrDefault(item => string.Equals(item.Id, currentDashboardId, StringComparison.OrdinalIgnoreCase));
-        if (reference is not null)
-        {
-            reference.Name = NormalizeDashboardName(dashboardNameBox.Text);
-        }
-
-        currentDashboardName = NormalizeDashboardName(dashboardNameBox.Text);
-    }
-
-    private void ReplacePanels(IEnumerable<LeptaPanelDefinition> definitions)
-    {
-        foreach (var panel in panels)
-        {
-            DetachPanel(panel);
-        }
-
-        panels.Clear();
-        foreach (var definition in definitions.Where(definition => definition is not null))
-        {
-            panels.Add(CreatePanelState(
-                string.IsNullOrWhiteSpace(definition.Name) ? $"Panel {panels.Count + 1}" : definition.Name.Trim(),
-                definition.CustomInstruction ?? string.Empty));
-        }
-
-        if (panels.Count == 0)
-        {
-            panels.Add(CreatePanelState("Panel 1", "Answer with the perspective for this panel."));
-        }
-    }
-
-    private LeptaPanelState CreatePanelState(string name, string customInstruction)
-    {
-        var panel = new LeptaPanelState
-        {
-            Name = name,
-            CustomInstruction = customInstruction
-        };
-
-        panel.PropertyChanged += HandlePanelPropertyChanged;
-        return panel;
-    }
-
-    private void DetachPanel(LeptaPanelState panel)
-        => panel.PropertyChanged -= HandlePanelPropertyChanged;
-
-    private void HandlePanelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is nameof(LeptaPanelState.Name) or nameof(LeptaPanelState.CustomInstruction))
-        {
-            OnStateChanged();
+            SetBusyState(false, run.StatusText.Text);
+            ThroughputCompleted?.Invoke();
         }
     }
 
     private void SetBusyState(bool busy, string statusMessage)
     {
         isBusy = busy;
-        runButton.IsEnabled = !busy && serverCombo.SelectedItem is VllmServerConfiguration server && server.UseExistingHttpServer;
-        progressBar.IsIndeterminate = busy;
-        statusText.Text = statusMessage;
+        run.RunButton.IsEnabled = !busy && run.ServerCombo.SelectedItem is VllmServerConfiguration server && server.HasEstablishedConnection;
+        run.StopButton.IsEnabled = busy && currentRunCts is not null && !currentRunCts.IsCancellationRequested;
+        run.ThinkingCheckBox.IsEnabled = !busy && (run.ServerCombo.SelectedItem as VllmServerConfiguration)?.SupportsThinking == true;
+        run.TemperatureTextBox.IsEnabled = !busy;
+        run.ProgressBar.IsIndeterminate = busy;
+        if (busy)
+        {
+            currentStatusLevel = ActionLogLevel.Info;
+            keepVisibleWhenIdle = false;
+        }
+
+        run.StatusText.Text = statusMessage;
+        ApplyStatusPresentation();
     }
 
-    private void MovePanel(Guid panelId, int offset)
+    private void ApplyServerSelection()
     {
-        var currentIndex = panels
-            .Select((panel, index) => new { panel, index })
-            .FirstOrDefault(item => item.panel.Id == panelId)
-            ?.index ?? -1;
-
-        if (currentIndex < 0)
+        var servers = GetAvailableServers();
+        if (servers.Count == 0)
         {
-            return;
-        }
-
-        var targetIndex = currentIndex + offset;
-        if (targetIndex < 0 || targetIndex >= panels.Count)
-        {
-            return;
-        }
-
-        panels.Move(currentIndex, targetIndex);
-        logger.Log(nameof(LeptaController), $"Moved panel from index {currentIndex} to {targetIndex}.");
-        OnStateChanged();
-    }
-
-    private void SetServerSelection(string? serverId)
-    {
-        pendingServerId = serverId;
-        if (serverCombo.ItemsSource is not IEnumerable<VllmServerConfiguration> availableServers)
-        {
-            return;
-        }
-
-        var server = string.IsNullOrWhiteSpace(serverId)
-            ? availableServers.FirstOrDefault()
-            : availableServers.FirstOrDefault(item => string.Equals(item.Id, serverId, StringComparison.OrdinalIgnoreCase))
-              ?? availableServers.FirstOrDefault();
-
-        serverCombo.SelectedItem = server;
-        pendingServerId = server?.Id;
-    }
-
-    private void SeedHotkeyKeys()
-    {
-        var keys = new List<string>();
-        for (var i = Key.A; i <= Key.Z; i++)
-        {
-            keys.Add(i.ToString());
-        }
-
-        for (var i = 1; i <= 12; i++)
-        {
-            keys.Add($"F{i}");
-        }
-
-        hotkeyKeyCombo.ItemsSource = keys;
-    }
-
-    private string NormalizePresetName(string? value)
-        => string.IsNullOrWhiteSpace(value) ? "Preset" : value.Trim();
-
-    private string NormalizeDashboardName(string? value)
-        => string.IsNullOrWhiteSpace(value) ? "Dashboard" : value.Trim();
-
-    private string EnsureUniquePresetName(string baseName)
-    {
-        var candidate = baseName;
-        var suffix = 2;
-        while (presetEntries.Any(item => string.Equals(item.Name, candidate, StringComparison.OrdinalIgnoreCase)))
-        {
-            candidate = $"{baseName} ({suffix++})";
-        }
-
-        return candidate;
-    }
-
-    private string EnsureUniqueDashboardName(string baseName)
-    {
-        var candidate = baseName;
-        var suffix = 2;
-        while (dashboardEntries.Any(item => string.Equals(item.Name, candidate, StringComparison.OrdinalIgnoreCase)))
-        {
-            candidate = $"{baseName} ({suffix++})";
-        }
-
-        return candidate;
-    }
-
-    private static LeptaDashboardDefinition CloneDashboard(LeptaDashboardDefinition dashboard) => new()
-    {
-        SchemaVersion = LeptaDashboardDefinition.CurrentSchemaVersion,
-        Id = string.IsNullOrWhiteSpace(dashboard.Id) ? Guid.NewGuid().ToString("N") : dashboard.Id.Trim(),
-        Name = string.IsNullOrWhiteSpace(dashboard.Name) ? "Dashboard" : dashboard.Name.Trim(),
-        SelectedServerId = string.IsNullOrWhiteSpace(dashboard.SelectedServerId) ? null : dashboard.SelectedServerId.Trim(),
-        GeneralInstruction = dashboard.GeneralInstruction ?? string.Empty,
-        Panels = dashboard.Panels
-            .Where(panel => panel is not null)
-            .Select(panel => new LeptaPanelDefinition
+            if (run.ServerCombo.SelectedItem is not null)
             {
-                Name = string.IsNullOrWhiteSpace(panel.Name) ? "Panel" : panel.Name.Trim(),
-                CustomInstruction = panel.CustomInstruction ?? string.Empty
-            })
-            .ToList()
-    };
+                run.ServerCombo.SelectedItem = null;
+            }
 
-    private string BuildHotkeyDisplayText()
-    {
-        var parts = new List<string>();
-        if (hotkeyCtrlCheckBox.IsChecked == true)
-        {
-            parts.Add("Ctrl");
+            return;
         }
 
-        if (hotkeyAltCheckBox.IsChecked == true)
+        var server = ResolvePreferredServer(servers);
+        if (!ReferenceEquals(run.ServerCombo.SelectedItem, server))
         {
-            parts.Add("Alt");
+            suppressStateChanged = true;
+            try
+            {
+                run.ServerCombo.SelectedItem = server;
+            }
+            finally
+            {
+                suppressStateChanged = false;
+            }
         }
-
-        if (hotkeyShiftCheckBox.IsChecked == true)
-        {
-            parts.Add("Shift");
-        }
-
-        if (hotkeyWinCheckBox.IsChecked == true)
-        {
-            parts.Add("Win");
-        }
-
-        parts.Add(hotkeyKeyCombo.SelectedItem as string ?? "(key)");
-        return string.Join("+", parts);
     }
+
+    private VllmServerConfiguration ResolvePreferredServer(IReadOnlyList<VllmServerConfiguration> servers)
+    {
+        if (!string.IsNullOrWhiteSpace(preferredServerId))
+        {
+            var preferred = servers.FirstOrDefault(item => string.Equals(item.Id, preferredServerId, StringComparison.OrdinalIgnoreCase));
+            if (preferred is not null)
+            {
+                return preferred;
+            }
+        }
+
+        return servers[0];
+    }
+
+    private List<VllmServerConfiguration> GetAvailableServers()
+        => run.ServerCombo.ItemsSource is IEnumerable<VllmServerConfiguration> availableServers
+            ? availableServers.ToList()
+            : [];
+
 
     private void PublishAction(string message, ActionLogLevel level = ActionLogLevel.Info)
         => actionLog.Publish(nameof(LeptaController), message, level);
+
+    private void SetStatusMessage(
+        string message,
+        ActionLogLevel level = ActionLogLevel.Info,
+        bool keepVisibleWhenIdle = false)
+    {
+        run.StatusText.Text = message;
+        currentStatusLevel = level;
+        this.keepVisibleWhenIdle = keepVisibleWhenIdle;
+        ApplyStatusPresentation();
+    }
+
+    private void ApplyStatusPresentation()
+    {
+        run.StatusText.SetResourceReference(
+            TextBlock.ForegroundProperty,
+            currentStatusLevel switch
+            {
+                ActionLogLevel.Warning => ThemeResourceKeys.WarningBrush,
+                ActionLogLevel.Error => ThemeResourceKeys.ErrorBrush,
+                _ => ThemeResourceKeys.SecondaryTextBrush
+            });
+
+        run.StatusText.Visibility = string.IsNullOrWhiteSpace(run.StatusText.Text)
+            ? Visibility.Collapsed
+            : isBusy || keepVisibleWhenIdle || currentStatusLevel is ActionLogLevel.Warning or ActionLogLevel.Error
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+    }
+
+    private static int EstimateTokenCount(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0;
+        }
+
+        return Math.Max(1, text.Trim().Length / 4);
+    }
+
+    private string? ResolveClipboardPrefillCacheSalt(string? serverId, string? model, string sharedPromptPrefix)
+    {
+        if (string.IsNullOrWhiteSpace(sharedPromptPrefix)
+            || string.IsNullOrWhiteSpace(lastClipboardPrefillCacheSalt)
+            || !string.Equals(lastClipboardPrefillServerId, serverId, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(lastClipboardPrefillModelName, model, StringComparison.Ordinal)
+            || !string.Equals(lastClipboardPrefillSharedPromptPrefix, sharedPromptPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return lastClipboardPrefillCacheSalt;
+    }
+
+    private static async Task AwaitCompletionAsync(Task completionTask, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var timeoutTask = Task.Delay(timeout, cancellationToken);
+        await Task.WhenAny(completionTask, timeoutTask);
+    }
 
     private void OnStateChanged()
     {

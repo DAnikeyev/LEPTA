@@ -7,290 +7,689 @@
         xmlns:sharedModels="clr-namespace:LEPTA.Shared.Diagnostics;assembly=LEPTA.Shared"
         mc:Ignorable="d"
         Loaded="Window_Loaded"
-        Title="LEPTA" Height="820" Width="1260" MinHeight="720" MinWidth="1080">
+        PreviewKeyDown="Window_PreviewKeyDown"
+        Title="LEPTA"
+        Icon="/Resources/logo_removeBG.ico"
+        Height="820"
+        Width="1260"
+        MinHeight="720"
+        MinWidth="1080">
+    <Window.Resources>
+        <Style x:Key="CompactIconButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+        </Style>
+
+        <DataTemplate x:Key="LeptaPanelTemplate">
+            <Border Background="{Binding AccentBackgroundBrush}"
+                    BorderBrush="{Binding AccentBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="4"
+                    Margin="4"
+                    RenderTransformOrigin="0.5,0.5"
+                    Tag="{Binding Id}">
+                <Grid Background="{DynamicResource PanelBackgroundBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border BorderBrush="{DynamicResource BorderBrushTheme}"
+                            BorderThickness="0,0,0,1"
+                            Padding="0,0,0,10"
+                            Background="Transparent"
+                            Cursor="SizeAll"
+                            Tag="{Binding Id}"
+                            PreviewMouseLeftButtonDown="LeptaPanelHeader_PreviewMouseLeftButtonDown"
+                            PreviewMouseLeftButtonUp="LeptaPanelHeader_PreviewMouseLeftButtonUp"
+                            PreviewMouseMove="LeptaPanelHeader_PreviewMouseMove">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="34" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Name}"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Margin="0,1,12,0"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       IsHitTestVisible="False" />
+                            <Grid Grid.Column="1"
+                                  Width="34"
+                                  Height="24"
+                                  Margin="0,0,8,0"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Center"
+                                  ToolTipService.InitialShowDelay="50"
+                                  ToolTipService.ShowDuration="30000">
+                                <Border x:Name="PanelStatusBadge"
+                                        Width="20"
+                                        Height="20"
+                                        CornerRadius="10"
+                                        BorderThickness="1"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Setter Property="Background" Value="{DynamicResource PanelBackgroundAltBrush}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushTheme}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding StatusBadgeState}" Value="Running">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding StatusBadgeState}" Value="Success">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Setter Property="Background" Value="{DynamicResource SuccessBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource SuccessBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding StatusBadgeState}" Value="Error">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource ErrorBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Border.ToolTip>
+                                        <ToolTip MaxWidth="360">
+                                            <TextBlock Text="{Binding StatusBadgeToolTip}"
+                                                       TextWrapping="Wrap" />
+                                        </ToolTip>
+                                    </Border.ToolTip>
+                                    <TextBlock Text="{Binding StatusBadgeGlyph}"
+                                               Foreground="White"
+                                               FontSize="12"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                            <Button Grid.Column="2"
+                                    Content="Edit"
+                                    Style="{StaticResource GhostToolbarButtonStyle}"
+                                    Width="42"
+                                    Margin="0,0,6,0"
+                                    Tag="{Binding Id}"
+                                    ToolTip="Edit panel name and instruction"
+                                    AutomationProperties.Name="Edit panel"
+                                    Click="OpenLeptaPanelEditorButton_Click" />
+                            <Button Grid.Column="3"
+                                    Content="×"
+                                    Style="{StaticResource GhostToolbarButtonStyle}"
+                                    Width="28"
+                                    Tag="{Binding Id}"
+                                    ToolTip="Delete this panel"
+                                    AutomationProperties.Name="Delete panel"
+                                    Click="DeleteLeptaPanelButton_Click" />
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="1" Margin="0,12,0,0">
+                        <controls:MarkdownResponseView Text="{Binding Response}"
+                                                       IsStreaming="{Binding IsStreaming}"
+                                                       PanelFormat="{Binding Format}"
+                                                       ResponseFontSize="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=ResponseFontSize}"
+                                                       ShowChatButton="True"
+                                                       Tag="{Binding Id}"
+                                                       ChatRequested="LeptaPanelChatRequested"
+                                                       PreviewRequested="LeptaPanelPreviewRequested" />
+                        <Border Background="{DynamicResource PanelBackgroundAltBrush}"
+                                BorderBrush="{DynamicResource BorderBrushTheme}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="14"
+                                Margin="0,4,0,0"
+                                IsHitTestVisible="False">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Response}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="No response yet."
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Center" />
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ModelServerProfileTemplate">
+            <Grid Margin="2,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Border Width="10" Height="10" CornerRadius="5" Margin="0,5,10,0" VerticalAlignment="Top">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{DynamicResource SecondaryTextBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Ready">
+                                    <Setter Property="Background" Value="{DynamicResource SuccessBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Busy">
+                                    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Warning">
+                                    <Setter Property="Background" Value="{DynamicResource WarningBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Error">
+                                    <Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding Name}"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
+                <Border Grid.Column="2"
+                        Padding="8,2"
+                        Margin="8,0,0,0"
+                        Background="{DynamicResource PanelBackgroundAltBrush}"
+                        BorderBrush="{DynamicResource BorderBrushTheme}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <TextBlock Text="{Binding UiStatusText}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                </Border>
+                <TextBlock Grid.Column="1"
+                           Grid.Row="1"
+                           Margin="0,4,0,0"
+                           Text="{Binding UiTypeLabel}"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           FontSize="12" />
+                <TextBlock Grid.Column="1"
+                           Grid.ColumnSpan="2"
+                           Grid.Row="2"
+                           Margin="0,2,0,0"
+                           Text="{Binding UiEndpointLabel}"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           FontSize="12"
+                           TextWrapping="Wrap" />
+            </Grid>
+        </DataTemplate>
+
+        <Style x:Key="SidebarExpanderToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="HeaderBorder"
+                                Background="Transparent"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Path x:Name="ChevronPath"
+                                      Width="8"
+                                      Height="8"
+                                      Margin="1,0,0,0"
+                                      HorizontalAlignment="Left"
+                                      VerticalAlignment="Center"
+                                      Data="M 1 1 L 5 4.5 L 1 8"
+                                      Stroke="{TemplateBinding Foreground}"
+                                      StrokeThickness="1.6"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      SnapsToDevicePixels="True">
+                                    <Path.RenderTransform>
+                                        <RotateTransform Angle="0" CenterX="4" CenterY="4.5" />
+                                    </Path.RenderTransform>
+                                </Path>
+                                <ContentPresenter Grid.Column="1"
+                                                  Margin="8,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+                                <Setter TargetName="ChevronPath" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <RotateTransform Angle="90" CenterX="4" CenterY="4.5" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="HeaderBorder" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SidebarExpanderStyle" TargetType="Expander">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushTheme}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <Border BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="0,1,0,0"
+                                Padding="0,12,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <ToggleButton x:Name="HeaderSite"
+                                              Background="{TemplateBinding Background}"
+                                              Foreground="{DynamicResource SecondaryTextBrush}"
+                                              Content="{TemplateBinding Header}"
+                                              FontSize="14"
+                                              FontWeight="SemiBold"
+                                              IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                              Style="{StaticResource SidebarExpanderToggleStyle}" />
+                                <ContentPresenter x:Name="ExpandSite"
+                                                  Grid.Row="1"
+                                                  Margin="0,10,0,12"
+                                                  Visibility="Collapsed"
+                                                  ContentSource="Content" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ColorChannelSliderStyle" TargetType="Slider">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Height="24">
+                            <Border Height="4"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource PanelBackgroundAltBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushTheme}"
+                                    BorderThickness="1"
+                                    CornerRadius="2" />
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge"
+                                                  Focusable="False"
+                                                  IsTabStop="False"
+                                                  Style="{StaticResource ScrollBarRepeatButtonStyle}" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="14" Height="14" Cursor="Hand">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbBorder"
+                                                        Background="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Slider}}"
+                                                        BorderBrush="{DynamicResource PanelBackgroundBrush}"
+                                                        BorderThickness="2"
+                                                        CornerRadius="7" />
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBorder" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsDragging" Value="True">
+                                                        <Setter TargetName="ThumbBorder" Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge"
+                                                  Focusable="False"
+                                                  IsTabStop="False"
+                                                  Style="{StaticResource ScrollBarRepeatButtonStyle}" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Grid x:Name="Root" Background="{DynamicResource WindowBackgroundBrush}">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="NavigationColumn" Width="220" />
+            <ColumnDefinition x:Name="NavigationColumn" Width="46" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Border x:Name="NavigationPanel" Background="{DynamicResource PanelBackgroundBrush}" Padding="14">
+        <Border x:Name="NavigationPanel" Background="{DynamicResource PanelBackgroundBrush}" Padding="6">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <StackPanel>
-                    <DockPanel LastChildFill="True" Margin="0,0,0,12">
-                        <Button x:Name="ToggleNavigationButton"
-                                DockPanel.Dock="Right"
-                                Width="38"
-                                Height="38"
-                                Padding="0"
-                                FontSize="16"
-                                Style="{StaticResource SecondaryButtonStyle}"
-                                ToolTip="Collapse or expand navigation"
-                                Click="ToggleNavigationButton_Click" />
-                        <TextBlock x:Name="NavigationTitleText"
-                                   Text="LEPTA"
-                                   FontSize="24"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                    </DockPanel>
-                    <TextBlock x:Name="NavigationSubtitleText"
-                               Text="Clipboard dashboards for parallel model responses"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
-                               TextWrapping="Wrap"
-                               Margin="0,0,0,18" />
-                </StackPanel>
+                <Image Width="28"
+                       Height="28"
+                       Source="/Resources/logo_removeBG.png"
+                       Stretch="Uniform"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,12"
+                       SnapsToDevicePixels="True"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       ToolTip="LEPTA" />
 
                 <StackPanel Grid.Row="1">
                     <RadioButton x:Name="LeptaTabButton"
                                  GroupName="Navigation"
                                  Style="{StaticResource NavigationButton}"
                                  IsChecked="True"
-                                 ToolTip="Open the LEPTA workspace"
+                                 ToolTip="Dashboard"
+                                 ToolTipService.Placement="Mouse"
+                                 ToolTipService.HorizontalOffset="18"
+                                  AutomationProperties.Name="LEPTA workspace"
                                  Checked="NavigationButton_Checked" />
                     <RadioButton x:Name="ModelsTabButton"
                                  GroupName="Navigation"
                                  Style="{StaticResource NavigationButton}"
-                                 ToolTip="Open model server profiles"
+                                 ToolTip="Models"
+                                 ToolTipService.Placement="Mouse"
+                                 ToolTipService.HorizontalOffset="18"
+                                  AutomationProperties.Name="Models"
                                  Checked="NavigationButton_Checked" />
                     <RadioButton x:Name="SettingsTabButton"
                                  GroupName="Navigation"
                                  Style="{StaticResource NavigationButton}"
-                                 ToolTip="Open app settings"
+                                 ToolTip="Settings"
+                                 ToolTipService.Placement="Mouse"
+                                 ToolTipService.HorizontalOffset="18"
+                                  AutomationProperties.Name="Settings"
                                  Checked="NavigationButton_Checked" />
                     <RadioButton x:Name="ChatTabButton"
                                  GroupName="Navigation"
                                  Style="{StaticResource NavigationButton}"
-                                 ToolTip="Open chat"
+                                 ToolTip="Chat"
+                                 ToolTipService.Placement="Mouse"
+                                 ToolTipService.HorizontalOffset="18"
+                                  AutomationProperties.Name="Chat"
                                  Checked="NavigationButton_Checked" />
                 </StackPanel>
-
-                <Border Grid.Row="2"
-                        Background="{DynamicResource PanelBackgroundAltBrush}"
-                        BorderBrush="{DynamicResource BorderBrushTheme}"
-                        BorderThickness="1"
-                        CornerRadius="10"
-                        Padding="12">
-                    <StackPanel>
-                        <TextBlock Text="Clipboard run" Foreground="{DynamicResource SecondaryTextBrush}" />
-                        <TextBlock Text="Use the global shortcut or the workspace run button." TextWrapping="Wrap" Margin="0,6,0,0" />
-                    </StackPanel>
-                </Border>
             </Grid>
         </Border>
 
         <Grid Grid.Column="1" Margin="20">
             <Grid x:Name="LeptaView">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <Border Style="{StaticResource CardBorderStyle}" Padding="18" Margin="0,0,0,16">
+                <Border Style="{StaticResource CardBorderStyle}" Padding="0">
                     <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition x:Name="LeptaSidebarColumn" Width="320" />
                         </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Column="0" Margin="0,0,18,0">
-                            <TextBlock Text="LEPTA workspace" FontSize="28" FontWeight="SemiBold" />
-                            <TextBlock Text="Panels use clipboard text plus general instructions plus each panel instruction, then generate in parallel against the selected HTTP server."
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       TextWrapping="Wrap"
-                                       Margin="0,6,0,0" />
-                        </StackPanel>
+                        <Grid Grid.Column="0" Background="{DynamicResource PanelBackgroundBrush}">
+                            <ItemsControl x:Name="LeptaPanelsItemsControl"
+                                          ItemTemplate="{StaticResource LeptaPanelTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Rows="1" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
 
-                        <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top">
-                            <Button Content="Settings"
-                                    Height="36"
-                                    Margin="0,0,8,8"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    Click="OpenSettingsFromHeaderButton_Click" />
-                            <Button Content="General instructions"
-                                    Height="36"
-                                    Margin="0,0,8,8"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    Click="OpenGeneralInstructionButton_Click" />
-                            <Button Content="Add panel"
-                                    Height="36"
-                                    Margin="0,0,8,8"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    Click="AddLeptaPanelButton_Click" />
-                            <Button x:Name="RunLeptaButton"
-                                    Content="Run now"
-                                    Height="36"
-                                    Margin="0,0,0,8"
-                                    Click="RunLeptaButton_Click" />
-                        </WrapPanel>
-
-                        <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,18,0,0">
-                            <StackPanel Width="220" Margin="0,0,14,12">
-                                <TextBlock Text="Dashboard name" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                <TextBox x:Name="LeptaDashboardNameBox" />
-                            </StackPanel>
-                            <StackPanel Width="240" Margin="0,0,14,12">
-                                <TextBlock Text="Saved dashboards" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                <ComboBox x:Name="LeptaDashboardListCombo" DisplayMemberPath="Name" SelectionChanged="LeptaDashboardListCombo_SelectionChanged" />
-                            </StackPanel>
-                            <StackPanel Width="260" Margin="0,0,14,12">
-                                <TextBlock Text="Target server" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                <ComboBox x:Name="LeptaServerCombo" DisplayMemberPath="Name" SelectionChanged="LeptaServerCombo_SelectionChanged" />
-                            </StackPanel>
-                            <StackPanel Width="200" Margin="0,0,14,12">
-                                <TextBlock Text="Preset name" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                <TextBox x:Name="LeptaPresetNameBox" />
-                            </StackPanel>
-                            <StackPanel Width="240" Margin="0,0,0,12">
-                                <TextBlock Text="Saved presets" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                <ComboBox x:Name="LeptaPresetListCombo" DisplayMemberPath="Name" />
-                            </StackPanel>
-                        </WrapPanel>
-
-                        <Grid Grid.Row="2" Grid.ColumnSpan="2" Margin="0,6,0,0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <Border Background="{DynamicResource PanelBackgroundAltBrush}"
-                                    BorderBrush="{DynamicResource BorderBrushTheme}"
-                                    BorderThickness="1"
-                                    CornerRadius="10"
-                                    Padding="12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="General instructions" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                        <TextBlock x:Name="GeneralInstructionSummaryText"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,6,0,0" />
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            Content="Edit"
-                                            Width="90"
-                                            Height="34"
-                                            Margin="16,0,0,0"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            Click="OpenGeneralInstructionButton_Click" />
+                            <Border x:Name="LeptaPanelPreviewOverlay"
+                                    Visibility="Collapsed"
+                                    Background="{DynamicResource OverlayBrush}"
+                                    Panel.ZIndex="18"
+                                    MouseLeftButtonDown="OverlayBackdrop_MouseLeftButtonDown">
+                                <Grid Margin="8">
+                                    <ContentControl x:Name="LeptaPanelPreviewContent"
+                                                    ContentTemplate="{StaticResource LeptaPanelTemplate}" />
                                 </Grid>
                             </Border>
-
-                            <TextBlock x:Name="LeptaStatusText"
-                                       Grid.Row="1"
-                                       Margin="0,12,0,0"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       TextWrapping="Wrap" />
-
-                            <WrapPanel Grid.Row="2" Margin="0,12,0,0">
-                                <Button Content="Save dashboard" Height="36" Margin="0,0,8,8" Style="{StaticResource SecondaryButtonStyle}" Click="SaveDashboardButton_Click" />
-                                <Button Content="Save dashboard as new" Height="36" Margin="0,0,12,8" Click="SaveDashboardAsNewButton_Click" />
-                                <Button Content="Delete dashboard" Height="36" Margin="0,0,16,8" Style="{StaticResource SecondaryButtonStyle}" Click="DeleteDashboardButton_Click" />
-                                <Button Content="Save preset" Height="36" Margin="0,0,8,8" Style="{StaticResource SecondaryButtonStyle}" Click="SaveLeptaPresetButton_Click" />
-                                <Button Content="Save preset as new" Height="36" Margin="0,0,8,8" Click="SaveLeptaPresetAsNewButton_Click" />
-                                <Button Content="Load preset" Height="36" Margin="0,0,8,8" Style="{StaticResource SecondaryButtonStyle}" Click="LoadLeptaPresetButton_Click" />
-                                <Button Content="Delete preset" Height="36" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" Click="DeleteLeptaPresetButton_Click" />
-                            </WrapPanel>
                         </Grid>
-                    </Grid>
-                </Border>
 
-                <Grid Grid.Row="1">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+                        <Border x:Name="LeptaSidebar"
+                                Grid.Column="1"
+                                Background="{DynamicResource PanelBackgroundAltBrush}"
+                                BorderBrush="{DynamicResource BorderBrushTheme}"
+                                BorderThickness="1,0,0,0"
+                                Padding="12">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          FocusVisualStyle="{x:Null}">
+                                <StackPanel>
+                                    <StackPanel Visibility="Collapsed">
+                                        <TextBox x:Name="LeptaDashboardNameBox" Text="Workspace" />
+                                        <ComboBox x:Name="LeptaDashboardListCombo"
+                                                  DisplayMemberPath="Name"
+                                                  SelectionChanged="LeptaDashboardListCombo_SelectionChanged" />
+                                    </StackPanel>
 
-                    <Border Style="{StaticResource CardBorderStyle}" Padding="16">
-                        <Grid x:Name="LeptaPanelsViewport">
-                            <ScrollViewer x:Name="LeptaPanelsScrollViewer"
-                                          VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled"
-                                          CanContentScroll="False">
-                                <ItemsControl x:Name="LeptaPanelsItemsControl"
-                                              Width="{Binding ElementName=LeptaPanelsViewport, Path=ActualWidth}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <controls:ResponsiveUniformWrapPanel MinItemWidth="340"
-                                                                                 HorizontalSpacing="16"
-                                                                                 VerticalSpacing="16" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Style="{StaticResource CardBorderStyle}" Padding="14" MinHeight="470">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="10" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button x:Name="RunLeptaButton"
+                                                Grid.Column="0"
+                                                Content="Run from clipboard"
+                                                Height="40"
+                                                MinWidth="180"
+                                                ToolTip="Run the active dashboard against the clipboard text"
+                                                AutomationProperties.Name="Run LEPTA workspace"
+                                                Click="RunLeptaButton_Click" />
+                                        <Button x:Name="StopLeptaButton"
+                                                Grid.Column="2"
+                                                Content="Stop"
+                                                Height="40"
+                                                MinWidth="108"
+                                                Padding="18,0"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                ToolTip="Cancel the active LEPTA request"
+                                                AutomationProperties.Name="Stop LEPTA request"
+                                                Click="StopLeptaButton_Click" />
+                                    </Grid>
+                                    <TextBlock x:Name="LeptaRunHotkeyText"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,14" />
+
+                                    <Expander Header="Panel control"
+                                              Style="{StaticResource SidebarExpanderStyle}"
+                                              IsExpanded="False"
+                                              Margin="0,0,0,12">
+                                        <StackPanel Margin="0,12,0,0">
+                                            <TextBlock Text="Preset name" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBox x:Name="LeptaPresetNameBox" />
+                                            <TextBlock Text="Saved presets" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,10,0,0" />
+                                            <ComboBox x:Name="LeptaPresetListCombo"
+                                                      DisplayMemberPath="DisplayName"
+                                                      SelectionChanged="LeptaPresetListCombo_SelectionChanged" />
+                                            <UniformGrid Columns="4" Margin="0,8,0,0">
+                                                <Button Content="Save"
+                                                        Height="34"
+                                                        Margin="0,0,8,0"
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        Click="SaveLeptaPresetButton_Click" />
+                                                <Button Content="New"
+                                                        Height="34"
+                                                        Margin="0,0,8,0"
+                                                        Click="SaveLeptaPresetAsNewButton_Click" />
+                                                <Button Content="Load"
+                                                        Height="34"
+                                                        Margin="0,0,8,0"
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        Click="LoadLeptaPresetButton_Click" />
+                                                <Button Content="Delete"
+                                                        Height="34"
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        Click="DeleteLeptaPresetButton_Click" />
+                                            </UniformGrid>
+
+                                            <Button Content="+ Add panel"
+                                                    Height="36"
+                                                    Margin="0,12,0,0"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    Click="AddLeptaPanelButton_Click" />
+
+                                            <Border Background="{DynamicResource PanelBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrushTheme}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="10"
+                                                    Padding="12"
+                                                    Margin="0,12,0,0">
                                                 <Grid>
-                                                    <Grid.RowDefinitions>
-                                                        <RowDefinition Height="Auto" />
-                                                        <RowDefinition Height="Auto" />
-                                                        <RowDefinition Height="Auto" />
-                                                        <RowDefinition Height="*" />
-                                                    </Grid.RowDefinitions>
-
-                                                    <DockPanel LastChildFill="True">
-                                                        <Button DockPanel.Dock="Right"
-                                                                Content="Delete"
-                                                                Margin="10,0,0,0"
-                                                                Style="{StaticResource SecondaryButtonStyle}"
-                                                                Tag="{Binding Id}"
-                                                                Click="DeleteLeptaPanelButton_Click" />
-                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="10,0,0,0">
-                                                            <Button Content="←" Width="34" Height="30" Margin="0,0,8,0" Style="{StaticResource SecondaryButtonStyle}" Tag="{Binding Id}" ToolTip="Move panel left" Click="MoveLeptaPanelLeftButton_Click" />
-                                                            <Button Content="→" Width="34" Height="30" Style="{StaticResource SecondaryButtonStyle}" Tag="{Binding Id}" ToolTip="Move panel right" Click="MoveLeptaPanelRightButton_Click" />
-                                                        </StackPanel>
-                                                        <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontSize="16" FontWeight="SemiBold" />
-                                                    </DockPanel>
-
-                                                    <StackPanel Grid.Row="1" Margin="0,10,0,0">
-                                                        <TextBlock Text="Custom instruction" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                                        <TextBox Text="{Binding CustomInstruction, UpdateSourceTrigger=PropertyChanged}"
-                                                                 AcceptsReturn="True"
-                                                                 Height="96"
-                                                                 TextWrapping="Wrap"
-                                                                 VerticalScrollBarVisibility="Auto" />
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Global instructions" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                        <TextBlock x:Name="GeneralInstructionSummaryText"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,6,0,0" />
                                                     </StackPanel>
-
-                                                    <Border Grid.Row="2"
-                                                            Margin="0,10,0,10"
-                                                            Background="{DynamicResource PanelBackgroundAltBrush}"
-                                                            BorderBrush="{DynamicResource BorderBrushTheme}"
-                                                            BorderThickness="1"
-                                                            CornerRadius="8"
-                                                            Padding="10,8">
-                                                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
-                                                    </Border>
-
-                                                    <TextBox Grid.Row="3"
-                                                             Text="{Binding Response}"
-                                                             IsReadOnly="True"
-                                                             AcceptsReturn="True"
-                                                             TextWrapping="Wrap"
-                                                             VerticalScrollBarVisibility="Auto" />
+                                                    <Button Grid.Column="1"
+                                                            Content="Edit"
+                                                            Width="80"
+                                                            Height="34"
+                                                            Margin="12,0,0,0"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            Click="OpenGeneralInstructionButton_Click" />
                                                 </Grid>
                                             </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Grid>
-                    </Border>
+                                        </StackPanel>
+                                    </Expander>
 
-                    <ProgressBar x:Name="LeptaProgress" Grid.Row="1" Height="6" Margin="0,10,0,0" IsIndeterminate="False" />
-                </Grid>
+                                    <Expander Header="Model"
+                                              Style="{StaticResource SidebarExpanderStyle}"
+                                              IsExpanded="False"
+                                              Margin="0,0,0,12">
+                                        <StackPanel Margin="0,12,0,0">
+                                            <TextBlock Text="Available model" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <ComboBox x:Name="LeptaServerCombo"
+                                                      DisplayMemberPath="Name"
+                                                      SelectionChanged="LeptaServerCombo_SelectionChanged" />
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <Expander Header="Request settings"
+                                              Style="{StaticResource SidebarExpanderStyle}"
+                                              IsExpanded="False"
+                                              Margin="0,0,0,12">
+                                        <StackPanel Margin="0,12,0,0">
+                                            <CheckBox x:Name="LeptaThinkingCheckBox"
+                                                      Content="Enable thinking when supported" />
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="140" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Temperature"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           VerticalAlignment="Center" />
+                                                <TextBox x:Name="LeptaTemperatureBox"
+                                                         Grid.Column="1"
+                                                         ToolTip="0 is more deterministic, 2 is more exploratory." />
+                                            </Grid>
+                                            <TextBlock Text="0.00 to 2.00. Lower values are steadier; higher values allow more variation."
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,8,0,0" />
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <Expander Header="Performance"
+                                              Style="{StaticResource SidebarExpanderStyle}"
+                                              IsExpanded="False">
+                                        <StackPanel Margin="0,12,0,0">
+                                            <TextBlock x:Name="LeptaThroughputValueText"
+                                                       Visibility="Collapsed" />
+                                            <ProgressBar x:Name="LeptaProgress"
+                                                         Height="6"
+                                                         Margin="0,0,0,0"
+                                                         IsIndeterminate="False" />
+                                            <Border x:Name="LeptaThroughputGraphHost"
+                                                    Height="142"
+                                                    Margin="0,12,0,0"
+                                                    Background="{DynamicResource SurfaceBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrushTheme}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    SizeChanged="LeptaThroughputGraphHost_SizeChanged"
+                                                    MouseMove="LeptaThroughputGraphHost_MouseMove"
+                                                    MouseLeave="LeptaThroughputGraphHost_MouseLeave">
+                                                 <Canvas x:Name="LeptaThroughputCanvas" Margin="4" ClipToBounds="True">
+                                                </Canvas>
+                                            </Border>
+                                            <TextBlock x:Name="LeptaThroughputDetailsText"
+                                                       Margin="0,10,0,0"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock x:Name="LeptaStatusText"
+                                                       Margin="0,10,0,0"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Expander>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <Button x:Name="ToggleLeptaSidebarButton"
+                                Grid.Column="0"
+                                Panel.ZIndex="5"
+                                Width="18"
+                                Height="34"
+                                Padding="0"
+                                Margin="0,0,-9,0"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                FontSize="13"
+                                Foreground="{DynamicResource SecondaryTextBrush}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Click="ToggleLeptaSidebarButton_Click">></Button>
+                    </Grid>
+                </Border>
             </Grid>
 
             <Grid x:Name="ModelsView" Visibility="Collapsed">
@@ -300,7 +699,7 @@
                 </Grid.RowDefinitions>
                 <StackPanel Margin="0,0,0,18">
                     <TextBlock Text="Models" FontSize="30" FontWeight="SemiBold" />
-                    <TextBlock Text="Configure either an already deployed HTTP vLLM server or a LEPTA-managed Docker deployment. Docker profiles validate local settings, save compose files under %LOCALAPPDATA%\Lepta\vllm, and become available to Chat and LEPTA after /v1/models responds." Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
+                    <TextBlock Text="Configure either an already deployed HTTP vLLM server or a LEPTA-managed Docker deployment. Docker profiles validate local settings, save compose files under %LOCALAPPDATA%\Lepta\vllm, and become available to Chat and LEPTA only after /v1/models responds." Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
                     <TextBlock x:Name="ModelNoteText" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}" Margin="0,10,0,0" />
                 </StackPanel>
 
@@ -313,150 +712,220 @@
                     <Border Style="{StaticResource CardBorderStyle}" Padding="14">
                         <DockPanel>
                             <Button DockPanel.Dock="Bottom" Content="Add model" Height="36" Margin="0,12,0,0" Click="AddModelButton_Click" />
-                            <ListBox x:Name="ModelsList" DisplayMemberPath="Name" SelectionChanged="ModelsList_SelectionChanged" />
+                            <Grid>
+                                <ListBox x:Name="ModelsList" ItemTemplate="{StaticResource ModelServerProfileTemplate}" SelectionChanged="ModelsList_SelectionChanged" />
+                                <Border Background="{DynamicResource PanelBackgroundAltBrush}"
+                                        BorderBrush="{DynamicResource BorderBrushTheme}"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="12"
+                                        Margin="4"
+                                        IsHitTestVisible="False">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ElementName=ModelsList, Path=HasItems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Foreground="{DynamicResource SecondaryTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="No model server profiles yet. Add a profile to configure an existing HTTP server or a Docker-managed local deployment." />
+                                </Border>
+                            </Grid>
                         </DockPanel>
                     </Border>
-                    <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="18">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" Margin="0,0,0,14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Server configuration" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="Configuration" Style="{StaticResource SecondaryButtonStyle}" Click="OpenAdvancedConfigurationButton_Click" />
-                            </Grid>
+                    <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="True">
+                            <Grid Margin="18">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                            <Grid Grid.Row="1" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Name" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <TextBox x:Name="NameBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
-                            </Grid>
-                            <Grid Grid.Row="2" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Source" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <ComboBox x:Name="DeploymentModeBox" Grid.Column="1" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged">
-                                    <ComboBoxItem Content="Deploy local folder with Docker" Tag="LocalDeploy" />
-                                    <ComboBoxItem Content="Already deployed HTTP server" Tag="ExistingHttpServer" />
-                                </ComboBox>
-                            </Grid>
-                            <Grid Grid.Row="3" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="HTTP server" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <TextBox x:Name="HttpServerAddressBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
-                            </Grid>
-                            <Grid Grid.Row="4" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Model / HF model ID" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <TextBox x:Name="ModelBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
-                            </Grid>
-                            <Grid Grid.Row="5" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Served model name" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <TextBox x:Name="ServedModelNameBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
-                            </Grid>
-                            <Grid Grid.Row="6" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="100" /><ColumnDefinition Width="130" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="Local folder" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <TextBox x:Name="LocalPathBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
-                                <Button Grid.Column="2" Content="Browse" Margin="10,4,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="BrowseModelButton_Click" />
-                                <Button Grid.Column="3" Content="Scan metadata" Margin="10,4,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="ScanModelMetadataButton_Click" />
-                            </Grid>
-                            <Border Grid.Row="7" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <TextBlock Text="Scanned local metadata" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                    <TextBlock x:Name="LocalModelMetadataText" Text="Select a local folder to scan metadata." TextWrapping="Wrap" Margin="0,6,0,0" />
-                                </StackPanel>
-                            </Border>
-                            <UniformGrid Grid.Row="8" Columns="5" Margin="0,0,0,12">
-                                <StackPanel Margin="0,0,10,0"><TextBlock Text="Port" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="PortBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
-                                <StackPanel Margin="0,0,10,0"><TextBlock Text="DType" Foreground="{DynamicResource SecondaryTextBrush}" /><ComboBox x:Name="DTypeBox" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged"><ComboBoxItem Content="half" /><ComboBoxItem Content="float16" /><ComboBoxItem Content="bfloat16" /><ComboBoxItem Content="float32" /><ComboBoxItem Content="auto" /></ComboBox></StackPanel>
-                                <StackPanel Margin="0,0,10,0"><TextBlock Text="GPU memory" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
-                                <StackPanel Margin="0,0,10,0"><TextBlock Text="Max len" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="MaxLenBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
-                                <StackPanel><TextBlock Text="Swap GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="SwapBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
-                            </UniformGrid>
-                            <Grid Grid.Row="9" Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="KV cache dtype" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <ComboBox x:Name="KvCacheBox" Grid.Column="1" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged">
-                                    <ComboBoxItem Content="fp8" />
-                                    <ComboBoxItem Content="fp16" />
-                                    <ComboBoxItem Content="bf16" />
-                                </ComboBox>
-                            </Grid>
-
-                            <Border Grid.Row="10" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="Estimated VRAM" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                        <TextBlock x:Name="EstimatedVramText" FontSize="24" FontWeight="SemiBold" Margin="0,4,0,0" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Estimated RAM" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                        <TextBlock x:Name="EstimatedRamText" FontSize="24" FontWeight="SemiBold" Margin="0,4,0,0" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <Border Grid.Row="11" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,2,0,12">
-                                <Grid>
+                                <Grid Grid.Row="0" Margin="0,0,0,14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border x:Name="DockerStatusIndicator" Width="10" Height="10" CornerRadius="5" VerticalAlignment="Center" Margin="0,0,10,0" Background="{DynamicResource SecondaryTextBrush}" />
-                                            <TextBlock Text="Docker status" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                        </StackPanel>
-                                        <TextBlock x:Name="DockerStatusText" FontSize="18" FontWeight="SemiBold" Margin="0,6,0,0" />
-                                        <TextBlock x:Name="DockerStatusDetailsText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <TextBlock x:Name="ModelConfigurationTitleText" Text="Server configuration" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <Button x:Name="SaveModelButton" Content="Save" Style="{StaticResource SecondaryButtonStyle}" Click="SaveModelButton_Click" />
+                                        <Button x:Name="DeleteModelButton" Content="Delete" Margin="10,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="DeleteModelButton_Click" />
+                                        <Button x:Name="OpenAdvancedConfigurationButton" Margin="10,0,0,0" Content="Configuration" Style="{StaticResource SecondaryButtonStyle}" Click="OpenAdvancedConfigurationButton_Click" />
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="Refresh" Width="100" Height="36" Margin="16,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="RefreshDockerStatusButton_Click" />
                                 </Grid>
-                            </Border>
 
-                            <DockPanel Grid.Row="12" Margin="0,2,0,12">
-                                <CheckBox x:Name="VerboseLogsCheckBox" Content="Verbose vLLM logs" VerticalAlignment="Center" Checked="VerboseLogsCheckBox_Changed" Unchecked="VerboseLogsCheckBox_Changed" />
-                                <TextBlock x:Name="EstimateSummaryText" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="16,0,0,0" />
-                            </DockPanel>
+                                <Grid Grid.Row="1" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="18" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Name" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                            <TextBox x:Name="NameBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
+                                        </Grid>
+                                        <Grid x:Name="HttpServerRow" Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="HTTP server" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                            <TextBox x:Name="HttpServerAddressBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
+                                        </Grid>
+                                        <Grid x:Name="ServedModelNameRow">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="ServedModelNameLabelText" Text="Served model name" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                            <TextBox x:Name="ServedModelNameBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Source" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                            <ComboBox x:Name="DeploymentModeBox" Grid.Column="1" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged">
+                                                <ComboBoxItem Content="Deploy local folder with Docker" Tag="LocalDeploy" />
+                                                <ComboBoxItem Content="Already deployed HTTP server" Tag="ExistingHttpServer" />
+                                            </ComboBox>
+                                        </Grid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="ModelFieldLabelText" Text="Model / HF model ID" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                            <TextBox x:Name="ModelBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Grid>
 
-                            <StackPanel Grid.Row="13" Orientation="Horizontal" Margin="0,8,0,14">
-                                <Button Content="▶ Play" Width="110" Height="38" Click="StartServerButton_Click" />
-                                <Button Content="■ Stop" Width="110" Height="38" Margin="10,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="StopServerButton_Click" />
-                                <Button Content="↻ Restart" Width="120" Height="38" Margin="10,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="RestartServerButton_Click" />
-                                <Button Content="Test access" Width="120" Height="38" Margin="10,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="TestServerButton_Click" />
-                            </StackPanel>
-                            <Grid Grid.Row="14">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-                                <ProgressBar x:Name="ModelProgress" Height="6" IsIndeterminate="False" />
-                                <TextBox x:Name="DeploymentLogBox" Grid.Row="1" Margin="0,14,0,0" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                                <Grid x:Name="LocalFolderRow" Grid.Row="2" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="100" /><ColumnDefinition Width="130" /></Grid.ColumnDefinitions>
+                                    <TextBlock Text="Local folder" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                    <TextBox x:Name="LocalPathBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
+                                    <Button Grid.Column="2" Content="Browse" Margin="10,4,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="BrowseModelButton_Click" />
+                                    <Button Grid.Column="3" Content="Scan metadata" Margin="10,4,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="ScanModelMetadataButton_Click" />
+                                </Grid>
+
+                                <Border x:Name="LocalMetadataBorder" Grid.Row="3" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Suitable local folders are vLLM-compatible Hugging Face Transformers directories. They can come from Hugging Face or another source, as long as the folder contains config/tokenizer files and model weights. GGUF bundles are not suitable for this Docker flow."
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,8" />
+                                        <TextBlock Text="Scanned local metadata" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock x:Name="LocalModelMetadataText" Text="Select a local vLLM-compatible Hugging Face-style folder to scan metadata." TextWrapping="Wrap" Margin="0,6,0,0" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid Grid.Row="4" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="18" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <Border x:Name="LocalRuntimeSettingsPanel" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,12">
+                                            <StackPanel>
+                                                <TextBlock Text="Runtime" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,10" />
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="12" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="12" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,10"><TextBlock Text="Max len" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="MaxLenBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,0,10"><TextBlock Text="Port" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="PortBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="0" Grid.Column="4" Margin="0,0,0,10"><TextBlock Text="DType" Foreground="{DynamicResource SecondaryTextBrush}" /><ComboBox x:Name="DTypeBox" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged"><ComboBoxItem Content="half" /><ComboBoxItem Content="float16" /><ComboBoxItem Content="bfloat16" /><ComboBoxItem Content="float32" /><ComboBoxItem Content="auto" /></ComboBox></StackPanel>
+                                                    <StackPanel Grid.Row="1" Grid.Column="0"><TextBlock Text="GPU memory util." Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Text="GPU VRAM GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuVramBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="1" Grid.Column="4"><TextBlock Text="CPU offload GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="CpuOffloadBox" ToolTip="Host RAM budget vLLM can use for CPU offload." TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,10,0,0"><TextBlock Text="Ready timeout min" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="ReadyTimeoutBox" ToolTip="How long LEPTA waits for /v1/models after Docker starts." TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="EstimateBorder" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14">
+                                            <StackPanel>
+                                                <TextBlock Text="Minimum required GPU usage" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                <TextBlock x:Name="EstimatedVramText" FontSize="24" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="2">
+                                        <Border x:Name="DockerStatusBorder" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,12">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border x:Name="DockerStatusIndicator" Width="10" Height="10" CornerRadius="5" VerticalAlignment="Center" Margin="0,0,10,0" Background="{DynamicResource SecondaryTextBrush}" />
+                                                        <TextBlock Text="Docker status" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <TextBlock x:Name="DockerStatusText" FontSize="18" FontWeight="SemiBold" Margin="0,6,0,0" />
+                                                    <TextBlock x:Name="DockerStatusDetailsText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Refresh" Width="100" Height="36" Margin="16,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="RefreshDockerStatusButton_Click" />
+                                            </Grid>
+                                        </Border>
+
+                                        <Border Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14">
+                                            <StackPanel>
+                                                <TextBlock Text="Model actions" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,10" />
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="10" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="10" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Button x:Name="StartServerButton" Grid.Column="0" Content="Run server" Height="40" ToolTip="Start the selected LEPTA-managed local server" AutomationProperties.Name="Start server" Click="StartServerButton_Click" />
+                                                    <Button x:Name="StopServerButton" Grid.Column="2" Content="Stop server" Height="40" ToolTip="Stop the selected LEPTA-managed server" AutomationProperties.Name="Stop server" Style="{StaticResource SecondaryButtonStyle}" Click="StopServerButton_Click" />
+                                                    <Button x:Name="RestartServerButton" Grid.Column="4" Content="Restart server" Height="40" ToolTip="Restart the selected LEPTA-managed server" AutomationProperties.Name="Restart server" Style="{StaticResource SecondaryButtonStyle}" Click="RestartServerButton_Click" />
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border x:Name="DeploymentLogBorder" Grid.Row="5" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Docker logs" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBox x:Name="DeploymentLogBox"
+                                                 Margin="0,10,0,0"
+                                                 Height="220"
+                                                 IsReadOnly="True"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 VerticalScrollBarVisibility="Auto" />
+                                    </StackPanel>
+                                </Border>
+
+                                <DockPanel Grid.Row="6" Margin="0,2,0,12">
+                                    <CheckBox x:Name="VerboseLogsCheckBox" Content="Verbose vLLM logs" VerticalAlignment="Center" Checked="VerboseLogsCheckBox_Changed" Unchecked="VerboseLogsCheckBox_Changed" />
+                                    <TextBlock x:Name="EstimateSummaryText" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="16,0,0,0" />
+                                </DockPanel>
+
+                                <ProgressBar x:Name="ModelProgress" Grid.Row="7" Height="6" IsIndeterminate="False" />
                             </Grid>
-                        </Grid>
+                        </ScrollViewer>
                     </Border>
                 </Grid>
             </Grid>
@@ -465,7 +934,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
                     <TextBlock Text="Settings" FontSize="30" FontWeight="SemiBold" />
-                    <TextBlock Text="Settings are saved automatically under %LOCALAPPDATA%\Lepta so your theme, defaults, hotkey, navigation layout, and overlay preferences come back on restart."
+                    <TextBlock Text="Settings are saved automatically under %LOCALAPPDATA%\Lepta so your theme, font size, defaults, hotkey, and overlay preferences come back on restart."
                                Foreground="{DynamicResource SecondaryTextBrush}"
                                TextWrapping="Wrap"
                                Margin="0,8,0,0" />
@@ -478,26 +947,53 @@
                     <Border Style="{StaticResource CardBorderStyle}" Padding="18" Margin="0,20,0,0">
                         <StackPanel>
                             <TextBlock Text="Workspace defaults" FontSize="20" FontWeight="SemiBold" />
-                            <TextBlock Text="These values control the startup layout and the default workspace/server selections that LEPTA restores automatically."
+                            <TextBlock Text="These values control the app font size and the default server selection that LEPTA restores automatically."
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        TextWrapping="Wrap"
                                        Margin="0,6,0,14" />
-                            <CheckBox x:Name="CollapseNavigationCheckBox"
-                                      Content="Start with navigation collapsed"
-                                      Margin="0,0,0,12"
-                                      Checked="CollapseNavigationCheckBox_Changed"
-                                      Unchecked="CollapseNavigationCheckBox_Changed" />
                             <Grid Margin="0,0,0,12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="180" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Default dashboard" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                <ComboBox x:Name="SettingsDefaultDashboardCombo"
+                                <TextBlock Text="Font size" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <ComboBox x:Name="UiFontSizeCombo"
                                           Grid.Column="1"
-                                          DisplayMemberPath="Name"
-                                          SelectionChanged="SettingsDefaultDashboardCombo_SelectionChanged" />
+                                          SelectionChanged="UiFontSizeCombo_SelectionChanged">
+                                    <ComboBoxItem Content="12" />
+                                    <ComboBoxItem Content="13" />
+                                    <ComboBoxItem Content="14" />
+                                    <ComboBoxItem Content="15" />
+                                    <ComboBoxItem Content="16" />
+                                    <ComboBoxItem Content="18" />
+                                </ComboBox>
                             </Grid>
+                             <Grid Margin="0,0,0,12">
+                                 <Grid.ColumnDefinitions>
+                                     <ColumnDefinition Width="180" />
+                                     <ColumnDefinition Width="*" />
+                                 </Grid.ColumnDefinitions>
+                                 <TextBlock Text="Response font size" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                 <ComboBox x:Name="ResponseFontSizeCombo"
+                                           Grid.Column="1"
+                                           SelectionChanged="ResponseFontSizeCombo_SelectionChanged">
+                                     <ComboBoxItem Content="4" />
+                                     <ComboBoxItem Content="6" />
+                                     <ComboBoxItem Content="8" />
+                                     <ComboBoxItem Content="10" />
+                                     <ComboBoxItem Content="12" />
+                                     <ComboBoxItem Content="14" />
+                                     <ComboBoxItem Content="16" />
+                                     <ComboBoxItem Content="18" />
+                                     <ComboBoxItem Content="20" />
+                                     <ComboBoxItem Content="22" />
+                                     <ComboBoxItem Content="24" />
+                                 </ComboBox>
+                             </Grid>
+                             <TextBlock Text="Tip: hold Ctrl and use the mouse wheel over any rendered response to change Markdown and Mermaid response size."
+                                        Foreground="{DynamicResource SecondaryTextBrush}"
+                                        TextWrapping="Wrap"
+                                        Margin="0,0,0,14" />
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="180" />
@@ -509,6 +1005,78 @@
                                           DisplayMemberPath="Name"
                                           SelectionChanged="SettingsDefaultServerCombo_SelectionChanged" />
                             </Grid>
+                            <StackPanel Visibility="Collapsed">
+                                <ComboBox x:Name="SettingsDefaultDashboardCombo"
+                                          DisplayMemberPath="Name"
+                                          SelectionChanged="SettingsDefaultDashboardCombo_SelectionChanged" />
+                                <CheckBox x:Name="CollapseNavigationCheckBox"
+                                          Checked="CollapseNavigationCheckBox_Changed"
+                                          Unchecked="CollapseNavigationCheckBox_Changed" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource CardBorderStyle}" Padding="18" Margin="0,20,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Clipboard cache prefill" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock Text="When new text lands in the clipboard, LEPTA can send a tiny 32-token prefill request with the system instructions, global instructions, and clipboard text to warm the KV cache before you press Run."
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,12" />
+                            <CheckBox x:Name="EnableClipboardCachePrefillCheckBox"
+                                      Content="Enable clipboard cache prefill"
+                                      Checked="EnableClipboardCachePrefillCheckBox_Changed"
+                                      Unchecked="EnableClipboardCachePrefillCheckBox_Changed" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource CardBorderStyle}" Padding="18" Margin="0,20,0,0">
+                        <StackPanel>
+                            <TextBlock Text="LEPTA system instructions" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock Text="Each LEPTA panel request is assembled in this order: System Instructions from this field, Global Instructions from the LEPTA workspace, Text from the clipboard, Panel Instructions from the panel, then the model writes the Response. This value is saved under %LOCALAPPDATA%\Lepta and restored on restart."
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,12" />
+                            <TextBox x:Name="LeptaSystemInstructionBox"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     MinHeight="180"
+                                     TextChanged="LeptaSystemInstructionBox_TextChanged" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource CardBorderStyle}" Padding="18" Margin="0,20,0,0">
+                        <StackPanel>
+                            <TextBlock Text="LEPTA document trimming" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock Text="Set how many document tokens LEPTA keeps for each request, then choose whether it removes the oldest text from the start or cuts off the overflow at the end when the clipboard content is too large."
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,12" />
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Document token limit" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBox x:Name="LeptaDocumentTokenLimitBox"
+                                         Grid.Column="1"
+                                         TextChanged="LeptaDocumentTokenLimitBox_TextChanged" />
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Trim direction" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <ComboBox x:Name="LeptaDocumentTrimModeCombo"
+                                          Grid.Column="1"
+                                          SelectionChanged="LeptaDocumentTrimModeCombo_SelectionChanged">
+                                    <ComboBoxItem Tag="TrimStart" Content="Trim start (keep newest text)" />
+                                    <ComboBoxItem Tag="TrimEnd" Content="Trim end (keep earliest text)" />
+                                </ComboBox>
+                            </Grid>
+                            <TextBlock x:Name="LeptaDocumentTrimSummaryText"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,10,0,0" />
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource CardBorderStyle}" Padding="18" Margin="0,20,0,0">
@@ -538,7 +1106,7 @@
                                 <CheckBox x:Name="HotkeyAltCheckBox" Content="Alt" Margin="0,0,10,0" Checked="HotkeySetting_Changed" Unchecked="HotkeySetting_Changed" />
                                 <CheckBox x:Name="HotkeyShiftCheckBox" Content="Shift" Margin="0,0,10,0" Checked="HotkeySetting_Changed" Unchecked="HotkeySetting_Changed" />
                                 <CheckBox x:Name="HotkeyWinCheckBox" Content="Win" Margin="0,0,10,0" Checked="HotkeySetting_Changed" Unchecked="HotkeySetting_Changed" />
-                                <ComboBox x:Name="HotkeyKeyCombo" Width="120" SelectionChanged="HotkeyKeyCombo_SelectionChanged" />
+                                <ComboBox x:Name="HotkeyKeyCombo" Width="120" IsEditable="True" IsTextSearchEnabled="False" SelectionChanged="HotkeyKeyCombo_SelectionChanged" />
                             </StackPanel>
                             <TextBlock x:Name="HotkeyPreviewText" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,10,0,0" />
                             <TextBlock x:Name="HotkeyRegistrationStatusText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
@@ -549,52 +1117,81 @@
             </Grid>
 
             <Grid x:Name="ChatView" Visibility="Collapsed">
-                <Border Style="{StaticResource CardBorderStyle}" Padding="18">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="ChatHistoryColumn" Width="280" />
+                </Grid.ColumnDefinitions>
+
+                <Border Style="{StaticResource CardBorderStyle}" Padding="12">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <StackPanel Margin="0,0,0,16">
-                            <TextBlock Text="Chat" FontSize="24" FontWeight="SemiBold" />
-                            <TextBlock Text="Use Chat to test the selected already deployed HTTP vLLM server with streaming responses, Markdown rendering after completion, and lightweight response metadata." Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                            <TextBlock x:Name="ChatStatusText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
-                        </StackPanel>
-
-                        <DockPanel Grid.Row="1" Margin="0,0,0,16">
-                            <Button x:Name="StopChatButton" DockPanel.Dock="Right" Content="Stop" Width="110" Height="36" Margin="10,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="StopChatButton_Click" />
-                            <Button x:Name="NewChatButton" DockPanel.Dock="Right" Content="New chat" Width="110" Height="36" Style="{StaticResource SecondaryButtonStyle}" Click="NewChatButton_Click" />
-                            <ComboBox x:Name="ChatServerCombo" Width="320" DisplayMemberPath="Name" SelectionChanged="ChatServerCombo_SelectionChanged" />
-                            <Button Content="Test selected" Width="110" Height="36" Margin="10,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Click="TestServerButton_Click" />
-                        </DockPanel>
-
-                        <Border Grid.Row="2" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,16">
-                            <StackPanel>
-                                <TextBlock Text="System instruction" Foreground="{DynamicResource SecondaryTextBrush}" />
-                                <TextBox x:Name="ChatSystemInstructionBox"
-                                         Margin="0,8,0,0"
-                                         Height="88"
-                                         AcceptsReturn="True"
-                                         TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto" />
-                                <TextBlock x:Name="ChatSystemInstructionHintText"
-                                           Margin="0,8,0,0"
+                        <Border Background="{DynamicResource PanelBackgroundAltBrush}" CornerRadius="10" Padding="12" Margin="0,0,0,12">
+                            <DockPanel LastChildFill="True">
+                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ComboBox x:Name="ChatServerCombo"
+                                              Width="320"
+                                              Height="34"
+                                              DisplayMemberPath="Name"
+                                              SelectionChanged="ChatServerCombo_SelectionChanged" />
+                                    <CheckBox x:Name="ChatThinkingCheckBox"
+                                              Content="Thinking"
+                                              Margin="12,0,0,0"
+                                              VerticalAlignment="Center" />
+                                    <Button x:Name="NewChatButton"
+                                            Content="New chat"
+                                            Height="34"
+                                            Padding="14,0"
+                                            Margin="12,0,0,0"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="NewChatButton_Click" />
+                                    <Button x:Name="StopChatButton"
+                                            Content="Stop"
+                                            Height="34"
+                                            Padding="14,0"
+                                            Margin="8,0,0,0"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="StopChatButton_Click" />
+                                </StackPanel>
+                                <TextBlock x:Name="ChatStatusText"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                                           VerticalAlignment="Center"
+                                           Margin="12,0,0,0" />
+                            </DockPanel>
                         </Border>
 
-                        <Border Grid.Row="3" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="14">
-                            <ScrollViewer x:Name="MessagesScrollViewer" VerticalScrollBarVisibility="Auto">
-                                <StackPanel x:Name="MessagesPanel" />
-                            </ScrollViewer>
+                        <Border Grid.Row="1" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="12">
+                            <Grid>
+                                <ScrollViewer x:Name="MessagesScrollViewer" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="MessagesPanel" />
+                                </ScrollViewer>
+                                <Border x:Name="ChatEmptyStateBorder"
+                                        Background="{DynamicResource PanelBackgroundAltBrush}"
+                                        BorderBrush="{DynamicResource BorderBrushTheme}"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="18"
+                                        Margin="2"
+                                        IsHitTestVisible="False">
+                                    <StackPanel>
+                                        <TextBlock Text="Chat is ready" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Margin="0,8,0,0"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Select a verified server and send a prompt to start." />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
                         </Border>
 
-                        <Grid Grid.Row="4" Margin="0,16,0,0">
+                        <Grid Grid.Row="2" Margin="0,12,0,0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -609,10 +1206,70 @@
                                        Grid.ColumnSpan="2"
                                        Margin="0,10,0,0"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Text="Enter sends. Shift+Enter inserts a newline." />
+                                       Text="Enter sends; Shift+Enter adds a newline." />
                         </Grid>
 
-                        <ProgressBar x:Name="ChatProgress" Grid.Row="4" Height="4" VerticalAlignment="Top" IsIndeterminate="False" />
+                        <ProgressBar x:Name="ChatProgress" Height="4" VerticalAlignment="Top" IsIndeterminate="False" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="1"
+                        Margin="12,0,0,0"
+                        Style="{StaticResource CardBorderStyle}"
+                        Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="History" FontSize="18" FontWeight="SemiBold" Margin="0,2,0,12" />
+                        <ListBox x:Name="ChatHistoryList"
+                                 Grid.Row="1"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 AllowDrop="False"
+                                 SelectionChanged="ChatHistoryList_SelectionChanged">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="6,6,6,6" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                                       Text="{Binding Title}"
+                                                       FontSize="14"
+                                                       FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="NoWrap"
+                                                       VerticalAlignment="Center" />
+                                            <Button Grid.Row="0" Grid.Column="1"
+                                                    Content="✕"
+                                                    Width="24" Height="24"
+                                                    Padding="0"
+                                                    FontSize="12"
+                                                    VerticalAlignment="Center"
+                                                    Margin="6,0,0,0"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    Click="DeleteHistoryEntry_Click"
+                                                    ToolTip="Delete this chat" />
+                                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                                                       Text="{Binding CreatedAt, StringFormat={}{0:MMM dd, HH:mm}}"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,2,0,0" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </Grid>
                 </Border>
             </Grid>
@@ -676,6 +1333,7 @@
                 Grid.ColumnSpan="2"
                 Panel.ZIndex="20"
                 Background="{DynamicResource OverlayBrush}"
+                MouseLeftButtonDown="OverlayBackdrop_MouseLeftButtonDown"
                 Visibility="Collapsed">
             <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="760" MaxHeight="640">
                 <Border Style="{StaticResource CardBorderStyle}" Padding="22" Background="{DynamicResource PanelBackgroundBrush}">
@@ -685,10 +1343,17 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <DockPanel Margin="0,0,0,16">
-                            <Button DockPanel.Dock="Right" Content="Close" Style="{StaticResource SecondaryButtonStyle}" Click="CloseGeneralInstructionButton_Click" />
-                            <TextBlock Text="General instructions" FontSize="24" FontWeight="SemiBold" />
-                        </DockPanel>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Global instructions" FontSize="24" FontWeight="SemiBold" />
+                            <Button Grid.Column="1"
+                                    Content="Close"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="CloseGeneralInstructionButton_Click" />
+                        </Grid>
                         <TextBox x:Name="LeptaGeneralInstructionBox"
                                  Grid.Row="1"
                                  AcceptsReturn="True"
@@ -699,7 +1364,97 @@
                                    Margin="0,16,0,0"
                                    Foreground="{DynamicResource SecondaryTextBrush}"
                                    TextWrapping="Wrap"
-                                   Text="This instruction is combined with clipboard text and each panel's custom instruction for every LEPTA run." />
+                                   Text="Per-panel request order: System Instructions from Settings → Global Instructions from this editor → Text from the clipboard → Request Instructions from the panel → hidden Panel Instructions from the selected answer format → Response." />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border x:Name="LeptaPanelEditorPanel"
+                Grid.ColumnSpan="2"
+                Panel.ZIndex="21"
+                Background="{DynamicResource OverlayBrush}"
+                MouseLeftButtonDown="OverlayBackdrop_MouseLeftButtonDown"
+                Visibility="Collapsed">
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="720" MaxHeight="640">
+                <Border Style="{StaticResource CardBorderStyle}" Padding="22" Background="{DynamicResource PanelBackgroundBrush}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="LeptaPanelEditorTitleText" Text="Edit panel" FontSize="24" FontWeight="SemiBold" />
+                            <Button Grid.Column="1"
+                                    Content="Close"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="CloseLeptaPanelEditorButton_Click" />
+                        </Grid>
+                                      <ScrollViewer Grid.Row="1"
+                                                    VerticalScrollBarVisibility="Auto"
+                                                    CanContentScroll="True">
+                                          <StackPanel Margin="0,0,4,0">
+                                              <TextBlock Text="Panel name" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                              <TextBox x:Name="LeptaPanelEditorNameBox"
+                                                       Margin="0,0,0,14"
+                                                       TextChanged="LeptaPanelEditorNameBox_TextChanged" />
+                                              <TextBlock Text="Panel format" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                              <ComboBox x:Name="LeptaPanelEditorFormatCombo"
+                                                        Margin="0,6,0,14"
+                                                        SelectionChanged="LeptaPanelEditorFormatCombo_SelectionChanged" />
+                            <TextBlock Text="The selected format adds hidden panel instructions after your request instruction."
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,-6,0,14" />
+                            <TextBlock Text="Request instruction" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBox x:Name="LeptaPanelEditorInstructionBox"
+                                                   Margin="0,6,0,14"
+                                     AcceptsReturn="True"
+                                                   MinHeight="200"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     TextChanged="LeptaPanelEditorInstructionBox_TextChanged" />
+                                              <TextBlock Text="Panel border color" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                              <TextBlock Text="Choose one of the preset colors or paste a hex color." Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0" />
+                                              <Grid Margin="0,8,0,0">
+                                                  <Grid.ColumnDefinitions>
+                                                      <ColumnDefinition Width="28" />
+                                                      <ColumnDefinition Width="10" />
+                                                      <ColumnDefinition Width="*" />
+                                                  </Grid.ColumnDefinitions>
+                                                  <Border x:Name="LeptaPanelColorPreviewBorder"
+                                                          Grid.Column="0"
+                                                          Height="28"
+                                                          Width="28"
+                                                          CornerRadius="8"
+                                                          BorderBrush="{DynamicResource BorderBrushTheme}"
+                                                          BorderThickness="1" />
+                                                  <TextBox x:Name="LeptaPanelColorHexBox"
+                                                           Grid.Column="2"
+                                                           VerticalAlignment="Center"
+                                                           MaxLength="7"
+                                                           TextChanged="LeptaPanelColorHexBox_TextChanged" />
+                                              </Grid>
+                                              <UniformGrid x:Name="LeptaPanelColorOptionsGrid"
+                                                           Margin="0,8,0,0"
+                                                           Columns="5" />
+                                          </StackPanel>
+                                      </ScrollViewer>
+                                      <DockPanel Grid.Row="2" Margin="0,16,0,0">
+                            <Button DockPanel.Dock="Right"
+                                    Content="Delete panel"
+                                    Width="120"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="DeleteLeptaPanelFromEditorButton_Click" />
+                            <TextBlock Foreground="{DynamicResource SecondaryTextBrush}"
+                                       VerticalAlignment="Center"
+                                        Text="Markdown panels get a hidden 'Answer format: markdown.' instruction. Mermaid panels get a hidden 'Answer format: mermaid ONLY.' instruction." />
+                        </DockPanel>
                     </Grid>
                 </Border>
             </Grid>
@@ -707,8 +1462,9 @@
 
         <Border x:Name="AdvancedConfigurationPanel"
                 Grid.ColumnSpan="2"
-                Panel.ZIndex="21"
+                Panel.ZIndex="22"
                 Background="{DynamicResource OverlayBrush}"
+                MouseLeftButtonDown="OverlayBackdrop_MouseLeftButtonDown"
                 Visibility="Collapsed">
             <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="760" MaxHeight="640">
                 <Border Style="{StaticResource CardBorderStyle}" Padding="22" Background="{DynamicResource PanelBackgroundBrush}">
@@ -718,10 +1474,17 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <DockPanel Margin="0,0,0,16">
-                            <Button DockPanel.Dock="Right" Content="Close" Style="{StaticResource SecondaryButtonStyle}" Click="CloseAdvancedConfigurationButton_Click" />
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <TextBlock Text="Advanced model configuration" FontSize="24" FontWeight="SemiBold" />
-                        </DockPanel>
+                            <Button Grid.Column="1"
+                                    Content="Close"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="CloseAdvancedConfigurationButton_Click" />
+                        </Grid>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <UniformGrid Columns="2" Margin="0,0,0,10">
                                 <StackPanel Margin="0,0,16,14"><TextBlock Text="Docker image" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="DockerImageBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
@@ -731,7 +1494,6 @@
                                         <TextBlock x:Name="ParameterCountText" />
                                     </Border>
                                 </StackPanel>
-                                <StackPanel Margin="0,0,0,14"><TextBlock Text="GPU layers" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuLayersBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
                                 <StackPanel Margin="0,0,16,14">
                                     <TextBlock Text="Weight quantization" Foreground="{DynamicResource SecondaryTextBrush}" />
                                     <ComboBox x:Name="WeightQuantizationBox" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged">
@@ -767,11 +1529,32 @@
                                         <ComboBoxItem Content="int4" />
                                     </ComboBox>
                                 </StackPanel>
-                                <StackPanel Margin="0,0,16,14"><TextBlock Text="CPU offload GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="CpuOffloadBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                <StackPanel Margin="0,0,16,14">
+                                    <TextBlock Text="Tokenizers parallelism" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <ComboBox x:Name="TokenizersParallelismBox" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged">
+                                        <ComboBoxItem Content="true" />
+                                        <ComboBoxItem Content="false" />
+                                    </ComboBox>
+                                </StackPanel>
                                 <StackPanel Margin="0,0,0,14"><TextBlock Text="Max parallel sequences" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="MaxNumSeqsBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,14">
+                                    <TextBlock Text="Append extra vLLM flags" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBox x:Name="AdditionalVllmArgumentsBox"
+                                             Margin="0,4,0,0"
+                                             MinHeight="56"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             Text="--speculative-config '{&quot;method&quot;:&quot;qwen3_next_mtp&quot;,&quot;num_speculative_tokens&quot;:2}'"
+                                             TextChanged="ConfigurationBox_TextChanged" />
+                                    <TextBlock Text="These tokens are appended after LEPTA's generated vLLM arguments. The default targets Qwen MTP speculative decoding, and you can edit or clear it for other models."
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,6,0,0" />
+                                </StackPanel>
                             </UniformGrid>
                         </ScrollViewer>
-                        <TextBlock Grid.Row="2" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Text="Adjust these values similarly to LM Studio-style advanced settings. LEPTA uses them to enrich docker startup arguments and estimate memory usage." />
+                        <TextBlock Grid.Row="2" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Text="LEPTA generates a compose file, Dockerfile, and entrypoint script from these values. The env-driven vLLM settings mirror the dev stack while keeping model-specific arguments in the generated script." />
                     </Grid>
                 </Border>
             </Grid>

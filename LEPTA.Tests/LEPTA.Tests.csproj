@@ -1,13 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows7.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\LEPTA\LEPTA.csproj" />
     <ProjectReference Include="..\LEPTA.Shared\LEPTA.Shared.csproj" />
     <ProjectReference Include="..\LEPTA.vLLM\LEPTA.vLLM.csproj" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" />

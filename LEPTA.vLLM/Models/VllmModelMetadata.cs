@@ -20,6 +20,7 @@ public sealed record VllmModelMetadata(
     string? PreferredKvCacheDType,
     double? RecommendedGpuMemoryUtilization,
     int? RecommendedMaxNumSeqs,
+    string? RecommendedAdditionalVllmArguments,
     bool EnablePrefixCaching,
     bool LanguageModelOnly,
     string? ReasoningParser,
@@ -78,6 +79,11 @@ public sealed record VllmModelMetadata(
         if (RecommendedMaxNumSeqs is { } recommendedMaxNumSeqs)
         {
             recommendationParts.Add($"seqs {recommendedMaxNumSeqs}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(RecommendedAdditionalVllmArguments))
+        {
+            recommendationParts.Add("extra flags available");
         }
 
         if (recommendationParts.Count > 0)

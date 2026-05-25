@@ -10,14 +10,17 @@ namespace LEPTA.vLLM.Services;
 
 public sealed class VllmChatCompletionClient
 {
-    private const bool DisableThinking = true;
     private static readonly TimeSpan DefaultStreamFirstTokenTimeout = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan DefaultStreamIdleTimeout = TimeSpan.FromSeconds(30);
     private readonly HttpClient httpClient;
     private readonly ILeptaLogger logger;
     private readonly TimeSpan streamFirstTokenTimeout;
     private readonly TimeSpan streamIdleTimeout;
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public VllmChatCompletionClient(
         HttpClient? httpClient = null,
@@ -73,6 +76,7 @@ public sealed class VllmChatCompletionClient
         IReadOnlyList<VllmChatMessage> messages,
         int maxTokens = 256,
         double temperature = 0.2,
+        VllmRequestOptions? requestOptions = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -84,15 +88,10 @@ public sealed class VllmChatCompletionClient
             throw new ArgumentException("At least one chat message is required.", nameof(messages));
         }
 
-        logger.Log(nameof(VllmChatCompletionClient), $"Preparing chat completion request for model '{model}' at {endpoint.TrimEnd('/')}/v1/chat/completions. messageCount={messages.Count}, maxTokens={maxTokens}, temperature={temperature}, disableThinking={DisableThinking.ToString().ToLowerInvariant()}.");
-        var payload = new
-        {
-            model,
-            messages = messages.Select(message => new { role = message.Role, content = message.Content }).ToArray(),
-            max_tokens = maxTokens,
-            temperature,
-            chat_template_kwargs = DisableThinking ? new { enable_thinking = false } : null
-        };
+        logger.Log(
+            nameof(VllmChatCompletionClient),
+            $"Preparing chat completion request for model '{model}' at {endpoint.TrimEnd('/')}/v1/chat/completions. messageCount={messages.Count}, maxTokens={maxTokens}, temperature={temperature}, enableThinking={(requestOptions?.EnableThinking ?? false).ToString().ToLowerInvariant()}, cacheSaltPresent={(!string.IsNullOrWhiteSpace(requestOptions?.CacheSalt)).ToString().ToLowerInvariant()}.");
+        var payload = BuildChatPayload(model, messages, maxTokens, temperature, stream: false, requestOptions);
 
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -105,17 +104,18 @@ public sealed class VllmChatCompletionClient
             ? completionTokens / elapsed.TotalSeconds
             : 0;
 
-        var text = ExtractChatCompletionText(document.RootElement);
+        var text = ExtractChatCompletionText(document.RootElement, requestOptions?.OmitReasoningFromOutput == true);
         logger.Log(nameof(VllmChatCompletionClient), $"Chat completion finished for model '{model}'. completionTokens={completionTokens}, elapsedMs={elapsed.TotalMilliseconds:F0}, textLength={text.Length}.");
         return new ChatCompletionResult(completionTokens, elapsed, tokensPerSecond, text);
     }
 
-    public async IAsyncEnumerable<string> StreamChatCompletionAsync(
+    public async IAsyncEnumerable<StreamChunk> StreamChatCompletionAsync(
         string endpoint,
         string model,
         IReadOnlyList<VllmChatMessage> messages,
         int maxTokens = 700,
         double temperature = 0.2,
+        VllmRequestOptions? requestOptions = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -127,16 +127,10 @@ public sealed class VllmChatCompletionClient
             throw new ArgumentException("At least one chat message is required.", nameof(messages));
         }
 
-        logger.Log(nameof(VllmChatCompletionClient), $"Preparing streaming chat request for model '{model}' at {endpoint.TrimEnd('/')}/v1/chat/completions. messageCount={messages.Count}, maxTokens={maxTokens}, temperature={temperature}, disableThinking={DisableThinking.ToString().ToLowerInvariant()}.");
-        var payload = new
-        {
-            model,
-            messages = messages.Select(message => new { role = message.Role, content = message.Content }).ToArray(),
-            max_tokens = maxTokens,
-            temperature,
-            stream = true,
-            chat_template_kwargs = DisableThinking ? new { enable_thinking = false } : null
-        };
+        logger.Log(
+            nameof(VllmChatCompletionClient),
+            $"Preparing streaming chat request for model '{model}' at {endpoint.TrimEnd('/')}/v1/chat/completions. messageCount={messages.Count}, maxTokens={maxTokens}, temperature={temperature}, enableThinking={(requestOptions?.EnableThinking ?? false).ToString().ToLowerInvariant()}, cacheSaltPresent={(!string.IsNullOrWhiteSpace(requestOptions?.CacheSalt)).ToString().ToLowerInvariant()}.");
+        var payload = BuildChatPayload(model, messages, maxTokens, temperature, stream: true, requestOptions);
 
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         using HttpRequestMessage request = new(
@@ -158,6 +152,7 @@ public sealed class VllmChatCompletionClient
 
         await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(contentStream);
+        var omitReasoning = requestOptions?.OmitReasoningFromOutput == true;
         var receivedContentToken = false;
         while (true)
         {
@@ -185,15 +180,22 @@ public sealed class VllmChatCompletionClient
             }
 
             using var document = JsonDocument.Parse(payloadLine);
-            var token = ExtractStreamingChunkText(document.RootElement);
+            var token = ExtractStreamingChunkText(document.RootElement, omitReasoning);
+            var completionTokens = TryGetStreamCompletionTokens(document.RootElement);
             if (!string.IsNullOrEmpty(token))
             {
                 receivedContentToken = true;
                 logger.Log(nameof(VllmChatCompletionClient), $"Streaming chat token received. tokenLength={token.Length}.");
-                yield return token;
+                yield return new StreamChunk(token, completionTokens);
+            }
+            else if (completionTokens.HasValue)
+            {
+                yield return new StreamChunk(string.Empty, completionTokens);
             }
         }
     }
+
+    public sealed record StreamChunk(string Text, int? CompletionTokens);
 
     public sealed record CompletionResult(int Tokens, TimeSpan Elapsed, double TokensPerSecond, string Text);
     public sealed record ChatCompletionResult(int Tokens, TimeSpan Elapsed, double TokensPerSecond, string Text);
@@ -239,6 +241,36 @@ public sealed class VllmChatCompletionClient
             ? value
             : $"{value[..limit]}...";
 
+    private static Dictionary<string, object?> BuildChatPayload(
+        string model,
+        IReadOnlyList<VllmChatMessage> messages,
+        int maxTokens,
+        double temperature,
+        bool stream,
+        VllmRequestOptions? requestOptions)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["messages"] = messages.Select(message => new { role = message.Role, content = message.Content }).ToArray(),
+            ["max_tokens"] = maxTokens,
+            ["temperature"] = temperature,
+            ["chat_template_kwargs"] = new { enable_thinking = requestOptions?.EnableThinking ?? false }
+        };
+
+        if (stream)
+        {
+            payload["stream"] = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestOptions?.CacheSalt))
+        {
+            payload["cache_salt"] = requestOptions.CacheSalt;
+        }
+
+        return payload;
+    }
+
     private static async Task<string?> ReadLineWithTimeoutAsync(
         StreamReader reader,
         TimeSpan timeout,
@@ -259,6 +291,21 @@ public sealed class VllmChatCompletionClient
         }
     }
 
+    private static int? TryGetStreamCompletionTokens(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("usage", out var usage)
+            || usage.ValueKind != JsonValueKind.Object
+            || !usage.TryGetProperty("completion_tokens", out var completionTokens)
+            || completionTokens.ValueKind != JsonValueKind.Number
+            || !completionTokens.TryGetInt32(out var value))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
     private static int TryGetCompletionTokens(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object
@@ -274,7 +321,7 @@ public sealed class VllmChatCompletionClient
         return value;
     }
 
-    private static string ExtractChatCompletionText(JsonElement root)
+    private static string ExtractChatCompletionText(JsonElement root, bool omitReasoning)
     {
         if (root.ValueKind != JsonValueKind.Object
             || !root.TryGetProperty("choices", out var choices)
@@ -286,13 +333,13 @@ public sealed class VllmChatCompletionClient
         var builder = new StringBuilder();
         foreach (var choice in choices.EnumerateArray())
         {
-            AppendChoiceText(builder, choice, includeMessage: true, includeDelta: false);
+            AppendChoiceText(builder, choice, includeMessage: true, includeDelta: false, omitReasoning);
         }
 
         return builder.ToString();
     }
 
-    private static string ExtractStreamingChunkText(JsonElement root)
+    private static string ExtractStreamingChunkText(JsonElement root, bool omitReasoning)
     {
         if (root.ValueKind != JsonValueKind.Object
             || !root.TryGetProperty("choices", out var choices)
@@ -304,13 +351,13 @@ public sealed class VllmChatCompletionClient
         var builder = new StringBuilder();
         foreach (var choice in choices.EnumerateArray())
         {
-            AppendChoiceText(builder, choice, includeMessage: false, includeDelta: true);
+            AppendChoiceText(builder, choice, includeMessage: false, includeDelta: true, omitReasoning);
         }
 
         return builder.ToString();
     }
 
-    private static void AppendChoiceText(StringBuilder builder, JsonElement choice, bool includeMessage, bool includeDelta)
+    private static void AppendChoiceText(StringBuilder builder, JsonElement choice, bool includeMessage, bool includeDelta, bool omitReasoning)
     {
         if (choice.ValueKind != JsonValueKind.Object)
         {
@@ -319,12 +366,12 @@ public sealed class VllmChatCompletionClient
 
         if (includeMessage && choice.TryGetProperty("message", out var message))
         {
-            builder.Append(ExtractMessageText(message));
+            builder.Append(ExtractMessageText(message, omitReasoning));
         }
 
         if (includeDelta && choice.TryGetProperty("delta", out var delta))
         {
-            builder.Append(ExtractMessageText(delta));
+            builder.Append(ExtractMessageText(delta, omitReasoning));
         }
 
         if (choice.TryGetProperty("text", out var text))
@@ -333,7 +380,7 @@ public sealed class VllmChatCompletionClient
         }
     }
 
-    private static string ExtractMessageText(JsonElement message)
+    private static string ExtractMessageText(JsonElement message, bool omitReasoning)
     {
         if (message.ValueKind != JsonValueKind.Object)
         {
@@ -349,7 +396,7 @@ public sealed class VllmChatCompletionClient
             }
         }
 
-        if (message.TryGetProperty("reasoning_content", out var reasoningContent))
+        if (!omitReasoning && message.TryGetProperty("reasoning_content", out var reasoningContent))
         {
             var reasoningContentText = ExtractTextValue(reasoningContent);
             if (!string.IsNullOrEmpty(reasoningContentText))
@@ -358,7 +405,7 @@ public sealed class VllmChatCompletionClient
             }
         }
 
-        if (message.TryGetProperty("reasoning", out var reasoning))
+        if (!omitReasoning && message.TryGetProperty("reasoning", out var reasoning))
         {
             var reasoningText = ExtractTextValue(reasoning);
             if (!string.IsNullOrEmpty(reasoningText))

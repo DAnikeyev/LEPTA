@@ -1,3 +1,4 @@
+using LEPTA.vLLM.Models;
 using LEPTA.vLLM.Services;
 
 namespace LEPTA.Tests;
@@ -59,6 +60,7 @@ public sealed class VllmModelMetadataScannerTests
             Assert.That(metadata.RecommendedMaxModelLength, Is.EqualTo(5120));
             Assert.That(metadata.RecommendedGpuMemoryUtilization, Is.EqualTo(0.90).Within(0.0001));
             Assert.That(metadata.RecommendedMaxNumSeqs, Is.EqualTo(1));
+            Assert.That(metadata.RecommendedAdditionalVllmArguments, Is.EqualTo(VllmServerConfiguration.QwenMtpSpeculativeArguments));
             Assert.That(metadata.LanguageModelOnly, Is.True);
             Assert.That(metadata.EnablePrefixCaching, Is.True);
             Assert.That(metadata.ReasoningParser, Is.EqualTo("qwen3"));

@@ -116,7 +116,7 @@ public sealed class VllmDeploymentServiceTests
     }
 
     [Test]
-    public async Task ValidateDeploymentAsync_RejectsMissingDockerImageAndContainerNameConflict()
+    public async Task ValidateDeploymentAsync_AllowsBlankDockerImageButStillReportsContainerNameConflict()
     {
         var service = new VllmDeploymentService(
             dockerCommandRunner: (arguments, _) => Task.FromResult(arguments.StartsWith("ps -a", StringComparison.Ordinal)
@@ -132,8 +132,9 @@ public sealed class VllmDeploymentServiceTests
         }, Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
 
         Assert.That(result.IsValid, Is.False);
-        Assert.That(result.Errors, Has.Some.Contains("Docker image"));
+        Assert.That(result.Errors, Has.None.Contains("Docker image"));
         Assert.That(result.Errors, Has.Some.Contains("already has a container named 'lepta-vllm-conflict'"));
+        Assert.That(result.Warnings, Has.Some.Contains(VllmServerConfiguration.DefaultDockerImage));
     }
 
     [Test]
@@ -217,13 +218,152 @@ public sealed class VllmDeploymentServiceTests
                 Model = "meta-llama/Llama-3.2-3B-Instruct",
                 HostPort = 8612,
                 EnableVerboseLogs = false
-            }, composeDirectory, new Progress<string>(message => progressMessages.Add(message)));
+            }, composeDirectory, new ImmediateProgress<string>(message => progressMessages.Add(message)));
+
+            var generatedComposePath = Path.Combine(composeDirectory, "lepta-vllm-docker-deploy.compose.yml");
+            var generatedDockerfilePath = Path.Combine(composeDirectory, "lepta-vllm-docker-deploy.dockerfile");
+            var generatedEntrypointPath = Path.Combine(composeDirectory, "lepta-vllm-docker-deploy.entrypoint.sh");
 
             Assert.That(commands.Any(command => command.StartsWith("info --format", StringComparison.Ordinal)), Is.True);
             Assert.That(commands.Any(command => command.StartsWith("ps -a --format", StringComparison.Ordinal)), Is.True);
-            Assert.That(commands.Any(command => command.Contains("compose -f", StringComparison.Ordinal) && command.EndsWith("up -d", StringComparison.Ordinal)), Is.True);
+            Assert.That(commands.Any(command => command.Contains("compose -f", StringComparison.Ordinal) && command.EndsWith("up -d --build --force-recreate", StringComparison.Ordinal)), Is.True);
+            Assert.That(File.Exists(generatedComposePath), Is.True);
+            Assert.That(File.Exists(generatedDockerfilePath), Is.True);
+            Assert.That(File.Exists(generatedEntrypointPath), Is.True);
+            Assert.That(await File.ReadAllTextAsync(generatedComposePath), Does.Contain("VLLM_PORT: '${VLLM_PORT:-8612}'"));
+            Assert.That(await File.ReadAllTextAsync(generatedEntrypointPath), Does.Contain("--model 'meta-llama/Llama-3.2-3B-Instruct'"));
+            Assert.That(progressMessages.Any(message => message.Contains("Deployment can take up to several minutes", StringComparison.Ordinal)), Is.True);
+            Assert.That(progressMessages.Any(message => message.Contains("up to 10 minutes", StringComparison.Ordinal)), Is.True);
             Assert.That(progressMessages.Any(message => message.Contains("Waiting for http://localhost:8612/v1/models", StringComparison.Ordinal)), Is.True);
             Assert.That(progressMessages.Any(message => message.Contains("Deployment ready. Using 'llama-3.2-3b-local'", StringComparison.Ordinal)), Is.True);
+            Assert.That(progressMessages.Any(message => message.StartsWith("[docker]", StringComparison.Ordinal)), Is.False);
+        }
+        finally
+        {
+            if (Directory.Exists(composeDirectory))
+            {
+                Directory.Delete(composeDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task DeployAsync_IncludesDockerOutputOnlyWhenVerboseLogsAreEnabled()
+    {
+        var composeDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var progressMessages = new List<string>();
+
+        try
+        {
+            using var http = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "data": [
+                        {
+                          "id": "qwen-local"
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }));
+
+            var service = new VllmDeploymentService(
+                http,
+                dockerCommandRunner: (arguments, _) => Task.FromResult(arguments.Contains("logs --tail 200", StringComparison.Ordinal)
+                    ? new DockerCommandResult(0, "INFO model loaded", string.Empty)
+                    : arguments.Contains("compose -f", StringComparison.Ordinal)
+                        ? new DockerCommandResult(0, "Container lepta-vllm-qwen Started", string.Empty)
+                        : new DockerCommandResult(0, "27.0.1", string.Empty)));
+
+            await service.DeployAsync(new VllmServerConfiguration
+            {
+                Name = "Qwen",
+                UseExistingHttpServer = false,
+                DockerImage = "vllm/vllm-openai:latest",
+                Model = "Qwen/Qwen3.5-9B",
+                HostPort = 8712,
+                EnableVerboseLogs = true
+            }, composeDirectory, new ImmediateProgress<string>(message => progressMessages.Add(message)));
+
+            Assert.That(progressMessages.Any(message => message.StartsWith("[docker] Container lepta-vllm-qwen Started", StringComparison.Ordinal)), Is.True);
+            Assert.That(progressMessages.Any(message => message.StartsWith("[docker] INFO model loaded", StringComparison.Ordinal)), Is.True);
+        }
+        finally
+        {
+            if (Directory.Exists(composeDirectory))
+            {
+                Directory.Delete(composeDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task DeployAsync_FailsFastWhenContainerExitsBeforeReadyAndCollectsDiagnostics()
+    {
+        var composeDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var progressMessages = new List<string>();
+        var commands = new List<string>();
+
+        try
+        {
+            using var http = new HttpClient(new StubHttpMessageHandler(_ => throw new HttpRequestException("Connection refused")));
+
+            var service = new VllmDeploymentService(
+                http,
+                dockerCommandRunner: (arguments, _) =>
+                {
+                    commands.Add(arguments);
+                    if (arguments.StartsWith("info --format", StringComparison.Ordinal))
+                    {
+                        return Task.FromResult(new DockerCommandResult(0, "27.0.1", string.Empty));
+                    }
+
+                    if (arguments.StartsWith("ps -a --format", StringComparison.Ordinal))
+                    {
+                        return Task.FromResult(new DockerCommandResult(0, string.Empty, string.Empty));
+                    }
+
+                    if (arguments.Contains("compose -f", StringComparison.Ordinal) && arguments.Contains("up -d", StringComparison.Ordinal))
+                    {
+                        return Task.FromResult(new DockerCommandResult(0, "started", string.Empty));
+                    }
+
+                    if (arguments.StartsWith("inspect ", StringComparison.Ordinal))
+                    {
+                        return Task.FromResult(new DockerCommandResult(0, "{\"Status\":\"exited\",\"ExitCode\":137,\"Error\":\"CUDA out of memory\",\"OOMKilled\":true}", string.Empty));
+                    }
+
+                    if (arguments.Contains("logs --tail 200", StringComparison.Ordinal))
+                    {
+                        return Task.FromResult(new DockerCommandResult(0, "RuntimeError: CUDA out of memory", string.Empty));
+                    }
+
+                    return Task.FromResult(new DockerCommandResult(0, string.Empty, string.Empty));
+                });
+
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(() => service.DeployAsync(new VllmServerConfiguration
+            {
+                Name = "Qwen Crash",
+                UseExistingHttpServer = false,
+                DockerImage = "vllm/vllm-openai:latest",
+                Model = "Qwen/Qwen3.5-9B",
+                HostPort = 8714,
+                EnableVerboseLogs = false
+            }, composeDirectory, new ImmediateProgress<string>(message => progressMessages.Add(message))));
+
+            Assert.That(exception, Is.Not.Null);
+            Assert.That(exception!.Message, Does.Contain("stopped before http://localhost:8714/v1/models became reachable"));
+            Assert.That(exception.Message, Does.Contain("exit code 137"));
+            Assert.That(exception.Message, Does.Contain("OOM killed"));
+            Assert.That(progressMessages, Has.Some.Contains("Docker container 'lepta-vllm-qwen-crash' status: exited"));
+            Assert.That(progressMessages, Has.Some.Contains("Deployment failed. Collecting docker logs..."));
+            Assert.That(progressMessages, Has.Some.Contains("[docker-diagnostic] RuntimeError: CUDA out of memory"));
+            Assert.That(commands.Any(command => command.StartsWith("inspect \"lepta-vllm-qwen-crash\"", StringComparison.Ordinal)), Is.True);
+            Assert.That(commands.Any(command => command.Contains("logs --tail 200", StringComparison.Ordinal)), Is.True);
         }
         finally
         {

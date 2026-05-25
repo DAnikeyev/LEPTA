@@ -135,15 +135,16 @@ public sealed class VllmCompletionIntegrationTests
         }
         catch (HttpRequestException exception)
         {
-            throw new InvalidOperationException(
-                $"vLLM server is not reachable at {baseUrl}. Start docker image from LEPTA.vLLM/dev/dockerfile.vLLM-Dev first.",
-                exception);
+            Assert.Ignore(
+                $"vLLM server is not reachable at {baseUrl}. Start docker image from LEPTA.vLLM/dev/dockerfile.vLLM-Dev first. {exception.Message}");
+            return;
         }
 
-        Assert.That(
-            healthResponse.IsSuccessStatusCode,
-            Is.True,
-            $"vLLM server is not reachable at {baseUrl}. Start docker image from LEPTA.vLLM/dev/dockerfile.vLLM-Dev first.");
+        if (!healthResponse.IsSuccessStatusCode)
+        {
+            Assert.Ignore(
+                $"vLLM server is not reachable at {baseUrl}. Start docker image from LEPTA.vLLM/dev/dockerfile.vLLM-Dev first. HTTP {(int)healthResponse.StatusCode} ({healthResponse.ReasonPhrase}).");
+        }
     }
 
     private static async Task<string> ResolveFirstModelIdAsync(HttpClient http, string baseUrl)

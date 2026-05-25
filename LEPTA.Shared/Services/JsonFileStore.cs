@@ -66,7 +66,27 @@ public sealed class JsonFileStore
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         EnsureParentDirectory(filePath);
         var json = JsonSerializer.Serialize(value, serializerOptions);
-        File.WriteAllText(filePath, json);
+        var temporaryPath = filePath + ".tmp";
+        File.WriteAllText(temporaryPath, json);
+
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                File.Replace(temporaryPath, filePath, destinationBackupFileName: null);
+            }
+            else
+            {
+                File.Move(temporaryPath, filePath);
+            }
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 
     public void Delete(string filePath)

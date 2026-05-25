@@ -43,6 +43,12 @@ public sealed class VllmModelMetadataScanner
         var preferredWeightQuantization = ResolvePreferredWeightQuantization(availableQuantizations);
         var preferredKvCacheDType = ResolvePreferredKvCacheDType(displayName, modelId, architecture, preferredWeightQuantization);
         var reasoningParser = ResolveReasoningParser(displayName, modelId, architecture);
+        var recommendedAdditionalVllmArguments = VllmServerConfiguration.ResolveSuggestedAdditionalVllmArguments(
+            displayName,
+            modelId,
+            normalizedDirectory,
+            architecture,
+            reasoningParser);
         var recommendedMaxModelLength = ResolveRecommendedMaxModelLength(displayName, modelId, preferredWeightQuantization, maxTokenLength);
         var recommendedGpuMemoryUtilization = ResolveRecommendedGpuMemoryUtilization(displayName, modelId, preferredWeightQuantization);
         var recommendedMaxNumSeqs = ResolveRecommendedMaxNumSeqs(displayName, modelId, preferredWeightQuantization);
@@ -66,6 +72,7 @@ public sealed class VllmModelMetadataScanner
             preferredKvCacheDType,
             recommendedGpuMemoryUtilization,
             recommendedMaxNumSeqs,
+            recommendedAdditionalVllmArguments,
             EnablePrefixCaching: IsQwenLike(displayName, modelId, architecture),
             LanguageModelOnly: IsQwenLike(displayName, modelId, architecture),
             ReasoningParser: reasoningParser,
