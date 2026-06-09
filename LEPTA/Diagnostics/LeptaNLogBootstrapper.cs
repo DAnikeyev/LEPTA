@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
 using LEPTA.Shared.Services;
 using NLog;
@@ -10,12 +9,8 @@ namespace LEPTA.Diagnostics;
 
 internal static class LeptaNLogBootstrapper
 {
-    private const int AttachParentProcess = -1;
-
     public static void Configure()
     {
-        EnsureConsole();
-
         var appDataPaths = new AppDataPaths();
         appDataPaths.EnsureCreated();
 
@@ -46,45 +41,6 @@ internal static class LeptaNLogBootstrapper
         LogManager.Configuration = config;
     }
 
-    private static void EnsureConsole()
-    {
-        if (GetConsoleWindow() == IntPtr.Zero)
-        {
-            if (!AttachConsole(AttachParentProcess))
-            {
-                AllocConsole();
-            }
-        }
-
-        try
-        {
-            var standardOutput = Console.OpenStandardOutput();
-            var writer = new StreamWriter(standardOutput) { AutoFlush = true };
-            Console.SetOut(writer);
-            Console.SetError(writer);
-
-            var standardInput = Console.OpenStandardInput();
-            Console.SetIn(new StreamReader(standardInput));
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-        catch (NotSupportedException)
-        {
-        }
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool AttachConsole(int dwProcessId);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool AllocConsole();
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetConsoleWindow();
 }
 
 

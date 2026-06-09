@@ -152,6 +152,7 @@ public sealed class LeptaRequestOrchestratorTests
         Assert.That(prompt, Does.Contain("Broken Mermaid:"));
         Assert.That(prompt, Does.Contain("graph TD"));
         Assert.That(prompt, Does.Not.Contain("```mermaid"));
+        Assert.That(prompt, Does.Contain("Common classDiagram mistakes"));
         Assert.That(prompt, Does.Contain("Return only valid Mermaid source"));
     }
 

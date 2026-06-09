@@ -25,6 +25,23 @@ cd C:\Repos\LEPTA
 dotnet build LEPTA.sln
 ```
 
+## Publish
+
+Produces a single self-contained `.exe` for Windows x64.
+
+```powershell
+cd C:\Repos\LEPTA
+dotnet publish LEPTA\LEPTA.csproj `
+  -c Release `
+  -r win-x64 `
+  --self-contained true `
+  -p:PublishSingleFile=true `
+  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -o publish
+```
+
+The output will be in `publish\LEPTA.exe`.
+
 ## Notes
 
 - The test project contains integration tests in `LEPTA.Tests/UnitTest1.cs` that are tagged with `Category("Integration")`.

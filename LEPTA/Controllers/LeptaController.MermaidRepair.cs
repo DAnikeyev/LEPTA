@@ -17,6 +17,8 @@ internal sealed partial class LeptaController
 
         public bool IsLoopRunning { get; set; }
 
+        public string? LastBrokenText { get; set; }
+
         public TaskCompletionSource<string?>? PendingValidation { get; set; }
 
         public CancellationTokenSource? Cancellation { get; set; }
@@ -81,6 +83,7 @@ internal sealed partial class LeptaController
                 }
 
                 tracker.AttemptsStarted = attempt;
+                tracker.LastBrokenText = panelState.Response;
                 var repairResponse = await requestOrchestrator.RepairMermaidDiagramAsync(
                     server.Endpoint,
                     model,
@@ -88,6 +91,7 @@ internal sealed partial class LeptaController
                     panelState.RenderErrorMessage ?? "Unknown Mermaid render error.",
                     enableThinking: server.SupportsThinking && run.ThinkingCheckBox.IsChecked == true,
                     temperature: currentTemperature,
+                    maxModelLength: server.MaxModelLength,
                     cancellationToken: cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(repairResponse.Error) || string.IsNullOrWhiteSpace(repairResponse.Text))
@@ -96,6 +100,15 @@ internal sealed partial class LeptaController
                     await panelsView.ItemsControl.Dispatcher.InvokeAsync(() =>
                         panelState.SetRenderRepairStatus(false, failureMessage));
                     PublishAction($"Panel '{panelState.Name}': {failureMessage}", attempt >= MaxMermaidRepairAttempts ? ActionLogLevel.Error : ActionLogLevel.Warning);
+                    continue;
+                }
+
+                if (IsRepairedTextUnchanged(tracker.LastBrokenText, repairResponse.Text))
+                {
+                    var unchangedMessage = $"Attempt {attempt}: failed. Repair returned the same broken syntax.";
+                    await panelsView.ItemsControl.Dispatcher.InvokeAsync(() =>
+                        panelState.SetRenderRepairStatus(false, unchangedMessage));
+                    PublishAction($"Panel '{panelState.Name}': {unchangedMessage}", attempt >= MaxMermaidRepairAttempts ? ActionLogLevel.Error : ActionLogLevel.Warning);
                     continue;
                 }
 
@@ -178,6 +191,33 @@ internal sealed partial class LeptaController
             ? selectedServer.EffectiveServedModelName
             : lastResolvedModelName;
         return !string.IsNullOrWhiteSpace(model);
+    }
+
+    private static bool IsRepairedTextUnchanged(string? brokenText, string? repairedText)
+    {
+        if (string.IsNullOrWhiteSpace(brokenText) || string.IsNullOrWhiteSpace(repairedText))
+        {
+            return false;
+        }
+
+        var normalizedBroken = brokenText.Replace("\r\n", "\n", StringComparison.Ordinal).Trim();
+        var normalizedRepaired = repairedText.Replace("\r\n", "\n", StringComparison.Ordinal).Trim();
+        if (normalizedBroken.Equals(normalizedRepaired, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // Consider unchanged if 95% of words are the same (allows minor punctuation changes)
+        var brokenWords = normalizedBroken.Split([' ', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        var repairedWords = normalizedRepaired.Split([' ', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        if (brokenWords.Length == 0 || repairedWords.Length == 0)
+        {
+            return false;
+        }
+
+        var commonWords = brokenWords.Intersect(repairedWords, StringComparer.OrdinalIgnoreCase).Count();
+        var similarity = commonWords / (double)Math.Max(brokenWords.Length, repairedWords.Length);
+        return similarity >= 0.95;
     }
 
     private void CancelMermaidRepair(Guid panelId)

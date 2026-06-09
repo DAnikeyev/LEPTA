@@ -1,4 +1,5 @@
 using System.Windows.Documents;
+using System.Windows.Controls;
 using LEPTA.Controls;
 using LEPTA.Services;
 using LEPTA.Shared.Models;
@@ -46,7 +47,7 @@ public sealed class MarkdownResponseRendererTests
 
         Assert.That(sources, Has.Count.EqualTo(1));
         Assert.That(sources[0], Does.StartWith("graph TD; A-->B;"));
-        Assert.That(sources[0], Does.Contain(MermaidDiagramPalettePostProcessor.AppliedMarker));
+        Assert.That(sources[0], Does.Not.Contain(MermaidDiagramPalettePostProcessor.AppliedMarker));
     }
 
     [Test]
@@ -62,8 +63,18 @@ public sealed class MarkdownResponseRendererTests
 
         Assert.That(normalized, Does.StartWith("flowchart TB"));
         Assert.That(normalized, Does.Not.Contain("                                                                                                      "));
-        Assert.That(normalized, Does.Contain(MermaidDiagramPalettePostProcessor.AppliedMarker));
-        Assert.That(normalized.Split('\n').Length, Is.GreaterThanOrEqualTo(5));
+        Assert.That(normalized, Does.Not.Contain(MermaidDiagramPalettePostProcessor.AppliedMarker));
+        Assert.That(normalized.Split('\n').Length, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void MermaidSourceNormalizer_RemovesPaletteMarkerFromNormalizationPath()
+    {
+        var normalized = MermaidSourceNormalizer.Normalize("graph TD\nA-->B");
+        var themed = MermaidDiagramPalettePostProcessor.Apply(normalized, isDarkTheme: true);
+
+        Assert.That(normalized, Does.Not.Contain(MermaidDiagramPalettePostProcessor.AppliedMarker));
+        Assert.That(themed, Does.Contain(MermaidDiagramPalettePostProcessor.AppliedMarker));
     }
 
     [Test]
@@ -130,6 +141,29 @@ public sealed class MarkdownResponseRendererTests
         var paragraph = (Paragraph)document.Blocks.FirstBlock!;
         var inlineText = new TextRange(paragraph.ContentStart, paragraph.ContentEnd).Text;
         Assert.That(inlineText, Is.EqualTo(text));
+    }
+
+    [Test]
+    public void MarkdownRenderer_WithThinkBlock_RendersCollapsedSecondaryExpander()
+    {
+        var renderer = new PanelResponseRendererRegistry().Resolve(LeptaPanelFormats.Markdown);
+
+        var document = renderer.BuildDocument("<think>Hidden reasoning</think>Visible answer.", 14);
+
+        Assert.That(document.Blocks.Count, Is.EqualTo(2));
+        Assert.That(document.Blocks.FirstBlock, Is.TypeOf<BlockUIContainer>());
+        var expander = (Expander)((BlockUIContainer)document.Blocks.FirstBlock!).Child;
+        Assert.That(expander.IsExpanded, Is.False);
+        Assert.That(expander.Header, Is.TypeOf<TextBlock>());
+        var header = (TextBlock)expander.Header;
+        Assert.That(header.Text, Is.EqualTo("Thinking"));
+        Assert.That(header.FontSize, Is.LessThan(14));
+        Assert.That(expander.Content, Is.TypeOf<Border>());
+        var border = (Border)expander.Content;
+        Assert.That(border.Child, Is.TypeOf<RichTextBox>());
+        var body = (RichTextBox)border.Child;
+        Assert.That(body.FontSize, Is.LessThan(14));
+        Assert.That(new TextRange(body.Document.ContentStart, body.Document.ContentEnd).Text.Trim(), Is.EqualTo("Hidden reasoning"));
     }
 
     [Test]

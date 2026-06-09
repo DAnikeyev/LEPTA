@@ -22,6 +22,14 @@ internal sealed class LightAppTheme : AppThemeBase
         [ThemeResourceKeys.SelectionBrush] = "#2F6FED",
         [ThemeResourceKeys.SelectionForegroundBrush] = "#FFFFFF",
         [ThemeResourceKeys.MessageSurfaceBrush] = "#E8EEF8",
+        [ThemeResourceKeys.LinkBrush] = "#1A5CC8",
+        [ThemeResourceKeys.CodeBackgroundBrush] = "#F0F3F8",
+        [ThemeResourceKeys.CodeInlineBackgroundBrush] = "#E4EAF2",
+        [ThemeResourceKeys.CodeKeywordBrush] = "#7B30D0",
+        [ThemeResourceKeys.CodeStringBrush] = "#2E7D32",
+        [ThemeResourceKeys.CodeCommentBrush] = "#8090A4",
+        [ThemeResourceKeys.CodeNumberBrush] = "#1565C0",
+        [ThemeResourceKeys.CodeIdentifierBrush] = "#B8860B",
         [ThemeResourceKeys.OverlayBrush] = "#99000000"
     };
 

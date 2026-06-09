@@ -8,7 +8,6 @@ using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using LEPTA.Controls;
-using LEPTA.Shared.Models;
 
 namespace LEPTA.Services;
 
@@ -50,7 +49,7 @@ internal sealed class MermaidRenderService
 
     public Task WarmupAsync()
     {
-        warmupTask ??= RenderAsync("graph TD; A-->B;", 14, DefaultRenderWidth);
+        warmupTask ??= RenderAsync("graph TD; A-->B;", 14);
         return warmupTask;
     }
 
@@ -60,20 +59,22 @@ internal sealed class MermaidRenderService
         double renderWidth = DefaultRenderWidth,
         CancellationToken cancellationToken = default)
     {
-        source = MermaidSourceNormalizer.Normalize(source);
-        if (string.IsNullOrWhiteSpace(source))
+        var normalizedSource = MermaidSourceNormalizer.Normalize(source);
+        if (string.IsNullOrWhiteSpace(normalizedSource))
         {
             return Task.FromResult<MermaidRenderResult?>(null);
         }
 
-        var cacheKey = MermaidDiagramViewCache.CreateKey(source, fontSize);
+        var themedSource = MermaidDiagramPalettePostProcessor.Apply(normalizedSource);
+
+        var cacheKey = MermaidDiagramViewCache.CreateKey(themedSource, fontSize);
         if (cache.TryGetValue(cacheKey, out var cached))
         {
             return Task.FromResult<MermaidRenderResult?>(cached);
         }
 
         var normalizedWidth = NormalizeRenderWidth(renderWidth);
-        return inFlight.GetOrAdd(cacheKey, _ => RenderCoreAsync(source, fontSize, normalizedWidth, cacheKey, cancellationToken));
+        return inFlight.GetOrAdd(cacheKey, _ => RenderCoreAsync(themedSource, fontSize, normalizedWidth, cacheKey, cancellationToken));
     }
 
     private async Task<MermaidRenderResult?> RenderCoreAsync(

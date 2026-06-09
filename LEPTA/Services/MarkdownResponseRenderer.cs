@@ -147,7 +147,8 @@ internal class MarkdownResponseRenderer : IPanelResponseRenderer
 
     private static BlockUIContainer BuildThinkExpander(string thinkContent, double fontSize, int index)
     {
-        var innerFontSize = Math.Max(10, fontSize - 2);
+        var headerFontSize = Math.Max(9, fontSize - 2.5);
+        var innerFontSize = Math.Max(9, fontSize - 3);
         var innerDocument = new FlowDocument
         {
             PagePadding = new Thickness(0),
@@ -163,26 +164,40 @@ internal class MarkdownResponseRenderer : IPanelResponseRenderer
             FontSize = innerFontSize
         });
 
+        var thinkingBody = new RichTextBox
+        {
+            Document = innerDocument,
+            IsReadOnly = true,
+            IsReadOnlyCaretVisible = false,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(0),
+            FontSize = innerFontSize,
+            Opacity = 0.9
+        };
+
+        var contentHost = new Border
+        {
+            Padding = new Thickness(10, 4, 0, 0),
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            Child = thinkingBody,
+            Opacity = 0.92
+        };
+        contentHost.SetResourceReference(Border.BorderBrushProperty, ThemeResourceKeys.BorderBrushTheme);
+
         var expander = new Expander
         {
             Header = new TextBlock
             {
                 Text = "Thinking",
-                FontSize = Math.Max(10, fontSize - 1),
-                FontStyle = FontStyles.Italic
+                FontSize = headerFontSize,
+                FontStyle = FontStyles.Italic,
+                Opacity = 0.9
             },
-            Content = new RichTextBox
-            {
-                Document = innerDocument,
-                IsReadOnly = true,
-                IsReadOnlyCaretVisible = false,
-                BorderThickness = new Thickness(0),
-                Background = Brushes.Transparent,
-                Padding = new Thickness(0),
-                FontSize = innerFontSize
-            },
+            Content = contentHost,
             IsExpanded = false,
-            Margin = new Thickness(0, 0, 0, 10)
+            Margin = new Thickness(0, 0, 0, 10),
+            Opacity = 0.96
         };
         expander.SetResourceReference(TextElement.ForegroundProperty, ThemeResourceKeys.SecondaryTextBrush);
         return new BlockUIContainer(expander);

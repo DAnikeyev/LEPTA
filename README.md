@@ -32,6 +32,10 @@ vLLM stores the key-value state for the shared prefix (system instructions + sou
 3. Copy text, press congihurable hotkey (or the run button).
 4. Read the parallel panel outputs.
 
+## Download
+
+Pre-built Windows releases are available on the [GitHub Releases](../../releases) page. Download the latest `LEPTA-win-x64.zip`, extract it, and run `LEPTA.exe`.
+
 ## Stack
 
 - WPF + .NET 10
@@ -46,5 +50,21 @@ dotnet restore LEPTA.sln
 dotnet test LEPTA.Tests --filter "Category!=Integration"
 dotnet build LEPTA.sln
 ```
+
+## Publish
+
+To build a single self-contained `.exe` locally:
+
+```powershell
+dotnet publish LEPTA\LEPTA.csproj `
+  -c Release `
+  -r win-x64 `
+  --self-contained true `
+  -p:PublishSingleFile=true `
+  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -o publish
+```
+
+The output will be in `publish\LEPTA.exe`.
 
 See `docs/ARCHITECTURE.md` and `docs/DEVELOPMENT_PLAN.md` for implementation details.

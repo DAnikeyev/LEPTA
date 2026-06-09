@@ -612,6 +612,18 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
     private void ConfigurationBox_TextChanged(object sender, TextChangedEventArgs e)
         => modelsController?.HandleConfigurationChanged();
 
+    private void DecimalBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        if (e.Text == "," && sender is TextBox textBox)
+        {
+            var caretIndex = textBox.CaretIndex;
+            var selectionLength = textBox.SelectionLength;
+            textBox.Text = textBox.Text.Remove(caretIndex, selectionLength).Insert(caretIndex, ".");
+            textBox.CaretIndex = caretIndex + 1;
+            e.Handled = true;
+        }
+    }
+
     private void ConfigurationSelectionChanged(object sender, SelectionChangedEventArgs e)
         => modelsController?.HandleConfigurationChanged();
 
@@ -1829,17 +1841,17 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
             var button = new Button
             {
                 Tag = accentColorHex,
-                Width = 28,
-                Height = 28,
+                Width = 18,
+                Height = 18,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0, 0, 8, 8),
-                MinHeight = 28,
+                Margin = new Thickness(1),
+                MinHeight = 18,
                 Padding = new Thickness(0),
                 Background = new SolidColorBrush(color),
                 BorderThickness = new Thickness(1),
                 BorderBrush = GetPanelColorOptionBorderBrush(color),
                 Foreground = GetPanelColorOptionContrastBrush(color),
-                FontSize = 12,
+                FontSize = 10,
                 FontWeight = FontWeights.SemiBold,
                 ToolTip = accentColorHex
             };
@@ -1863,7 +1875,7 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
             var optionColor = ParseColor(optionHex);
             var isSelected = string.Equals(optionHex, normalizedHex, StringComparison.OrdinalIgnoreCase);
             button.Content = isSelected ? "✓" : null;
-            button.BorderThickness = isSelected ? new Thickness(3) : new Thickness(1);
+            button.BorderThickness = isSelected ? new Thickness(2) : new Thickness(1);
             button.BorderBrush = isSelected
                 ? GetPanelColorOptionContrastBrush(optionColor)
                 : GetPanelColorOptionBorderBrush(optionColor);

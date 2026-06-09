@@ -53,6 +53,10 @@ public sealed record VllmServerConfiguration
     [JsonIgnore]
     public string UiStatusDetails { get; set; } = "Select the profile or use Check server to verify it.";
     public bool SupportsLifecycleManagement => !UseExistingHttpServer;
+
+    public int MaxOutputTokens => Math.Max(256, MaxModelLength / 4);
+    public int MaxContextTokens => Math.Max(512, MaxModelLength / 2);
+    public int MaxDocumentTokens => Math.Max(512, MaxModelLength * 3 / 4);
     [JsonIgnore]
     public bool IsLeptaManagedDeploymentActive => SupportsLifecycleManagement && HasEstablishedConnection;
     [JsonIgnore]

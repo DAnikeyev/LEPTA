@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
 using LEPTA.Controls;
 using LEPTA.Shared.Models;
 using LEPTA.Theming;
@@ -109,20 +110,25 @@ internal sealed partial class ChatController
         };
         plainSenderText.SetResourceReference(TextBlock.ForegroundProperty, foregroundKey);
 
-        var textBlock = new TextBlock
+        var textBox = new TextBox
         {
             Text = text,
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = TextWrapping.Wrap,
+            IsReadOnly = true,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            IsTabStop = false
         };
 
-        textBlock.SetResourceReference(TextBlock.ForegroundProperty, foregroundKey);
+        textBox.SetResourceReference(Control.ForegroundProperty, foregroundKey);
         stackPanel.Children.Add(plainSenderText);
-        stackPanel.Children.Add(textBlock);
+        stackPanel.Children.Add(textBox);
         bubble.Child = stackPanel;
         messages.MessagesPanel.Children.Add(bubble);
         UpdateEmptyStateVisibility();
         messages.ScrollViewer.ScrollToEnd();
-        return new ChatMessageBubble(bubble, textBlock, null, null);
+        return new ChatMessageBubble(bubble, textBox, null, null);
     }
 
     private void AppendMessageText(ChatMessageBubble? target, string text)
@@ -305,14 +311,14 @@ internal sealed partial class ChatController
 
     private sealed record ChatMessageBubble(
         Border Bubble,
-        TextBlock? PlainTextBlock,
+        TextBox? PlainTextBlock,
         MarkdownResponseView? MarkdownView,
         TextBlock? MetadataSummaryText,
         TextBlock? MetadataDetailsText)
     {
         public ChatMessageBubble(
             Border bubble,
-            TextBlock? plainTextBlock,
+            TextBox? plainTextBlock,
             TextBlock? metadataSummaryText,
             TextBlock? metadataDetailsText)
             : this(bubble, plainTextBlock, null, metadataSummaryText, metadataDetailsText)

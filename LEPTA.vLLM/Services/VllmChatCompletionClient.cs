@@ -10,6 +10,8 @@ namespace LEPTA.vLLM.Services;
 
 public sealed class VllmChatCompletionClient
 {
+    private static readonly string OpenThinkTag = string.Concat('<', "think", '>');
+    private static readonly string CloseThinkTag = string.Concat('<', '/', "think", '>');
     private static readonly TimeSpan DefaultStreamFirstTokenTimeout = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan DefaultStreamIdleTimeout = TimeSpan.FromSeconds(30);
     private readonly HttpClient httpClient;
@@ -154,12 +156,18 @@ public sealed class VllmChatCompletionClient
         using var reader = new StreamReader(contentStream);
         var omitReasoning = requestOptions?.OmitReasoningFromOutput == true;
         var receivedContentToken = false;
+        var reasoningBlockOpen = false;
         while (true)
         {
             var timeout = receivedContentToken ? streamIdleTimeout : streamFirstTokenTimeout;
             var line = await ReadLineWithTimeoutAsync(reader, timeout, receivedContentToken, cancellationToken);
             if (line is null)
             {
+                if (reasoningBlockOpen)
+                {
+                    yield return new StreamChunk(CloseThinkTag, CompletionTokens: null);
+                }
+
                 yield break;
             }
 
@@ -171,6 +179,11 @@ public sealed class VllmChatCompletionClient
             var payloadLine = line["data:".Length..].Trim();
             if (string.Equals(payloadLine, "[DONE]", StringComparison.Ordinal))
             {
+                if (reasoningBlockOpen)
+                {
+                    yield return new StreamChunk(CloseThinkTag, CompletionTokens: null);
+                }
+
                 yield break;
             }
 
@@ -180,7 +193,33 @@ public sealed class VllmChatCompletionClient
             }
 
             using var document = JsonDocument.Parse(payloadLine);
-            var token = ExtractStreamingChunkText(document.RootElement, omitReasoning);
+            var chunkParts = ExtractStreamingChunkParts(document.RootElement);
+            var tokenBuilder = new StringBuilder();
+            if (!omitReasoning && !string.IsNullOrEmpty(chunkParts.Reasoning))
+            {
+                if (!reasoningBlockOpen)
+                {
+                    tokenBuilder.Append(OpenThinkTag);
+                    reasoningBlockOpen = true;
+                }
+
+                tokenBuilder.Append(chunkParts.Reasoning);
+            }
+
+            if (!string.IsNullOrEmpty(chunkParts.Content))
+            {
+                if (reasoningBlockOpen)
+                {
+                    tokenBuilder.Append(CloseThinkTag);
+                    reasoningBlockOpen = false;
+                }
+
+                tokenBuilder.Append(chunkParts.Content);
+            }
+
+            var token = omitReasoning
+                ? chunkParts.Content
+                : tokenBuilder.ToString();
             var completionTokens = TryGetStreamCompletionTokens(document.RootElement);
             if (!string.IsNullOrEmpty(token))
             {
@@ -339,25 +378,41 @@ public sealed class VllmChatCompletionClient
         return builder.ToString();
     }
 
-    private static string ExtractStreamingChunkText(JsonElement root, bool omitReasoning)
+    private static ResponseChunkParts ExtractStreamingChunkParts(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object
             || !root.TryGetProperty("choices", out var choices)
             || choices.ValueKind != JsonValueKind.Array)
         {
-            return string.Empty;
+            return ResponseChunkParts.Empty;
         }
 
-        var builder = new StringBuilder();
+        var contentBuilder = new StringBuilder();
+        var reasoningBuilder = new StringBuilder();
         foreach (var choice in choices.EnumerateArray())
         {
-            AppendChoiceText(builder, choice, includeMessage: false, includeDelta: true, omitReasoning);
+            AppendChoiceParts(contentBuilder, reasoningBuilder, choice, includeMessage: false, includeDelta: true);
         }
 
-        return builder.ToString();
+        return new ResponseChunkParts(contentBuilder.ToString(), reasoningBuilder.ToString());
     }
 
     private static void AppendChoiceText(StringBuilder builder, JsonElement choice, bool includeMessage, bool includeDelta, bool omitReasoning)
+    {
+        var contentBuilder = new StringBuilder();
+        var reasoningBuilder = new StringBuilder();
+        AppendChoiceParts(contentBuilder, reasoningBuilder, choice, includeMessage, includeDelta);
+        if (!omitReasoning && reasoningBuilder.Length > 0)
+        {
+            builder.Append(OpenThinkTag);
+            builder.Append(reasoningBuilder);
+            builder.Append(CloseThinkTag);
+        }
+
+        builder.Append(contentBuilder);
+    }
+
+    private static void AppendChoiceParts(StringBuilder contentBuilder, StringBuilder reasoningBuilder, JsonElement choice, bool includeMessage, bool includeDelta)
     {
         if (choice.ValueKind != JsonValueKind.Object)
         {
@@ -366,25 +421,25 @@ public sealed class VllmChatCompletionClient
 
         if (includeMessage && choice.TryGetProperty("message", out var message))
         {
-            builder.Append(ExtractMessageText(message, omitReasoning));
+            AppendMessageParts(contentBuilder, reasoningBuilder, message);
         }
 
         if (includeDelta && choice.TryGetProperty("delta", out var delta))
         {
-            builder.Append(ExtractMessageText(delta, omitReasoning));
+            AppendMessageParts(contentBuilder, reasoningBuilder, delta);
         }
 
         if (choice.TryGetProperty("text", out var text))
         {
-            builder.Append(ExtractTextValue(text));
+            contentBuilder.Append(ExtractTextValue(text));
         }
     }
 
-    private static string ExtractMessageText(JsonElement message, bool omitReasoning)
+    private static void AppendMessageParts(StringBuilder contentBuilder, StringBuilder reasoningBuilder, JsonElement message)
     {
         if (message.ValueKind != JsonValueKind.Object)
         {
-            return string.Empty;
+            return;
         }
 
         if (message.TryGetProperty("content", out var content))
@@ -392,29 +447,32 @@ public sealed class VllmChatCompletionClient
             var contentText = ExtractTextValue(content);
             if (!string.IsNullOrEmpty(contentText))
             {
-                return contentText;
+                contentBuilder.Append(contentText);
             }
         }
 
-        if (!omitReasoning && message.TryGetProperty("reasoning_content", out var reasoningContent))
+        if (message.TryGetProperty("reasoning_content", out var reasoningContent))
         {
             var reasoningContentText = ExtractTextValue(reasoningContent);
             if (!string.IsNullOrEmpty(reasoningContentText))
             {
-                return reasoningContentText;
+                reasoningBuilder.Append(reasoningContentText);
             }
         }
 
-        if (!omitReasoning && message.TryGetProperty("reasoning", out var reasoning))
+        if (message.TryGetProperty("reasoning", out var reasoning))
         {
             var reasoningText = ExtractTextValue(reasoning);
             if (!string.IsNullOrEmpty(reasoningText))
             {
-                return reasoningText;
+                reasoningBuilder.Append(reasoningText);
             }
         }
+    }
 
-        return string.Empty;
+    private sealed record ResponseChunkParts(string Content, string Reasoning)
+    {
+        public static ResponseChunkParts Empty { get; } = new(string.Empty, string.Empty);
     }
 
     private static string ExtractTextValue(JsonElement value)

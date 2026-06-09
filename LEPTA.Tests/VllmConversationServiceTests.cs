@@ -10,6 +10,15 @@ namespace LEPTA.Tests;
 public sealed class VllmConversationServiceTests
 {
     [Test]
+    public void DefaultSystemPrompt_UsesGenericTechnicalAssistantInstructions()
+    {
+        Assert.That(VllmConversationService.DefaultSystemPrompt, Does.Not.Contain("LEPTA").IgnoreCase);
+        Assert.That(VllmConversationService.DefaultSystemPrompt, Does.Not.Contain("vLLM").IgnoreCase);
+        Assert.That(VllmConversationService.DefaultSystemPrompt, Does.Contain("Be precise, technical, and concise."));
+        Assert.That(VllmConversationService.DefaultSystemPrompt, Does.Contain("Prioritize correctness over sounding confident."));
+    }
+
+    [Test]
     public async Task SendAsync_IncludesSystemPromptAndConversationHistory()
     {
         HttpRequestMessage? capturedRequest = null;
@@ -171,6 +180,50 @@ public sealed class VllmConversationServiceTests
             "What should LEPTA do next?");
 
         Assert.That(result.AssistantText, Is.EqualTo("Ready to help."));
+    }
+
+    [Test]
+    public async Task SendAsync_WrapsReasoningInThinkTags_WhenReasoningIsReturned()
+    {
+        var openThink = string.Concat('<', "think", '>');
+        var closeThink = string.Concat('<', '/', "think", '>');
+        using var http = new HttpClient(new StubHttpMessageHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {
+                  "choices": [
+                    {
+                      "message": {
+                        "reasoning": "Plan first.",
+                        "content": "Final answer."
+                      }
+                    }
+                  ],
+                  "usage": {
+                    "completion_tokens": 5
+                  }
+                }
+                """,
+                Encoding.UTF8,
+                "application/json")
+        })))
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        var service = new VllmConversationService(new VllmChatCompletionClient(http));
+        var result = await service.SendAsync(
+            "http://localhost:8512",
+            "Qwen3.5-9B-local",
+            [],
+            "What should LEPTA do next?",
+            requestOptions: new VllmRequestOptions
+            {
+                EnableThinking = true
+            });
+
+        Assert.That(result.AssistantText, Is.EqualTo($"{openThink}Plan first.{closeThink}Final answer."));
     }
 
     [Test]
@@ -415,6 +468,8 @@ public sealed class VllmConversationServiceTests
     public async Task StreamConversationAsync_ReadsStreamingReasoningChunks_WhenContentIsEmpty()
     {
         var streamed = new StringBuilder();
+        var openThink = string.Concat('<', "think", '>');
+        var closeThink = string.Concat('<', '/', "think", '>');
 
         using var http = new HttpClient(new StubHttpMessageHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -442,10 +497,14 @@ public sealed class VllmConversationServiceTests
             "Qwen3.5-9B-local",
             [],
             "What should LEPTA do next?",
-            token => streamed.Append(token));
+            token => streamed.Append(token),
+            requestOptions: new VllmRequestOptions
+            {
+                EnableThinking = true
+            });
 
-        Assert.That(streamed.ToString(), Is.EqualTo("Ready to help."));
-        Assert.That(result.AssistantText, Is.EqualTo("Ready to help."));
+        Assert.That(streamed.ToString(), Is.EqualTo($"{openThink}Ready to help.{closeThink}"));
+        Assert.That(result.AssistantText, Is.EqualTo($"{openThink}Ready to help.{closeThink}"));
         Assert.That(result.UsedPromptFallback, Is.False);
     }
 

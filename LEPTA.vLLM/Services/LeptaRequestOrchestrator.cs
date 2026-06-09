@@ -77,6 +77,15 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         builder.AppendLine();
         AppendSection(builder, "Broken Mermaid", StripMermaidFence(mermaidBlock));
         builder.AppendLine();
+        AppendSection(
+            builder,
+            "Common classDiagram mistakes to fix",
+            "- Replace '-->|label|' with '--> Node : label' (classDiagram does NOT support |label| syntax).\n"
+                + "- Replace 'note NodeId \"text\"' with 'note for NodeId \"text\"'.\n"
+                + "- Remove any markdown code fences (triple-backtick mermaid).\n"
+                + "- Ensure node IDs are alphanumeric with no spaces or dots inside the ID.\n"
+                + "- Ensure brackets [] and parentheses () are balanced.");
+        builder.AppendLine();
         AppendSection(builder, "Output Requirements", "Return only valid Mermaid source for a single diagram. No prose. No bullets. No markdown code fences.");
         return builder.ToString().TrimEnd();
     }
@@ -88,6 +97,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         string renderError,
         bool enableThinking = false,
         double temperature = 0.1,
+        int maxModelLength = 8192,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -101,7 +111,8 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
             OmitReasoningFromOutput = enableThinking
         };
         var normalizedTemperature = Math.Clamp(temperature, 0.0, 0.4);
-        var maxTokens = Math.Clamp(Math.Max(256, EstimateTokenCount(mermaidBlock) * 2), 256, 2048);
+        var maxOutputTokens = Math.Max(256, maxModelLength / 4);
+        var maxTokens = Math.Clamp(Math.Max(256, EstimateTokenCount(mermaidBlock) * 2), 256, maxOutputTokens);
         logger.Log(nameof(LeptaRequestOrchestrator), $"Submitting Mermaid repair request for model '{model}' at {endpoint.TrimEnd('/')}. sourceLength={mermaidBlock.Length}, errorLength={renderError?.Length ?? 0}, maxTokens={maxTokens}.");
 
         try
@@ -241,7 +252,8 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         try
         {
             var prompt = BuildPanelPrompt(sharedPromptPrefix, panel.CustomInstruction, panel.Format);
-            logger.Log(nameof(LeptaRequestOrchestrator), $"Starting panel '{panel.Name}' generation. panelIndex={panelIndex}, promptLength={prompt.Length}.");
+            var systemPrompt = ResolvePanelSystemPrompt(panel.Format);
+            logger.Log(nameof(LeptaRequestOrchestrator), $"Starting panel '{panel.Name}' generation. panelIndex={panelIndex}, promptLength={prompt.Length}, systemPrompt={(!string.IsNullOrWhiteSpace(systemPrompt)).ToString().ToLowerInvariant()}.");
             var builder = new StringBuilder();
             ThinkingContentStreamFilter? streamFilter = requestOptions.OmitReasoningFromOutput
                 ? new ThinkingContentStreamFilter()
@@ -250,7 +262,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
                                endpoint,
                                model,
                                prompt,
-                               systemPrompt: string.Empty,
+                               systemPrompt: systemPrompt,
                                temperature: temperature,
                                requestOptions: requestOptions,
                                cancellationToken: cancellationToken))
@@ -286,6 +298,20 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         {
             onPanelCompleted?.Invoke(panelIndex);
         }
+    }
+
+    private static string ResolvePanelSystemPrompt(string? format)
+    {
+        if (string.Equals(LeptaPanelFormats.Normalize(format), LeptaPanelFormats.Mermaid, StringComparison.OrdinalIgnoreCase))
+        {
+            return "You are a Mermaid diagram expert. Generate valid, minimal Mermaid syntax. "
+                + "You NEVER wrap the output in markdown fences. "
+                + "You know the exact syntax rules for classDiagram, flowchart, and sequenceDiagram. "
+                + "In classDiagram, label relationships with ': label' after the arrow. "
+                + "In classDiagram, use 'note for NodeId \"text\"' for notes.";
+        }
+
+        return string.Empty;
     }
 
     private static int EstimateVisibleTokenCount(string? text)

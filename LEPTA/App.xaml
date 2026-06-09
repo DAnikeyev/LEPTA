@@ -21,6 +21,14 @@
         <SolidColorBrush x:Key="SelectionBrush" Color="#2F6FED" />
         <SolidColorBrush x:Key="SelectionForegroundBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="MessageSurfaceBrush" Color="#232C3A" />
+        <SolidColorBrush x:Key="LinkBrush" Color="#7DB6FF" />
+        <SolidColorBrush x:Key="CodeBackgroundBrush" Color="#11161F" />
+        <SolidColorBrush x:Key="CodeInlineBackgroundBrush" Color="#273142" />
+        <SolidColorBrush x:Key="CodeKeywordBrush" Color="#C792EA" />
+        <SolidColorBrush x:Key="CodeStringBrush" Color="#C3E88D" />
+        <SolidColorBrush x:Key="CodeCommentBrush" Color="#7F8C9D" />
+        <SolidColorBrush x:Key="CodeNumberBrush" Color="#82AAFF" />
+        <SolidColorBrush x:Key="CodeIdentifierBrush" Color="#F6BD60" />
         <SolidColorBrush x:Key="OverlayBrush" Color="#B2000000" />
 
         <Style TargetType="Window">

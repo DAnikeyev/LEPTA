@@ -9,7 +9,17 @@ namespace LEPTA.vLLM.Services;
 
 public sealed class VllmConversationService(VllmChatCompletionClient chatCompletionClient, ILeptaLogger? logger = null)
 {
-    public const string DefaultSystemPrompt = "You are LEPTA's connected vLLM test assistant. Give concise, helpful answers unless the user asks for more detail.";
+    public const string DefaultSystemPrompt = """
+        Be precise, technical, and concise.
+        Prioritize correctness over sounding confident.
+        For technical questions, explain the reasoning step-by-step before the conclusion.
+        State assumptions explicitly when information is missing.
+        Distinguish facts, estimates, and opinions clearly.
+        Avoid generic advice and repetition.
+        Use domain-specific terminology when appropriate.
+        If multiple valid answers exist, compare tradeoffs briefly.
+        When uncertain, say what would need to be verified.
+        """;
     private readonly ILeptaLogger logger = logger ?? NullLeptaLogger.Instance;
 
     public async Task<ConversationTurnResult> SendAsync(

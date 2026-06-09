@@ -28,6 +28,11 @@ internal sealed partial class ModelsController
 
     public void HandleModelsSelectionChanged()
     {
+        if (isSynchronizingSelection)
+        {
+            return;
+        }
+
         if (selection.ModelsList.SelectedItem is VllmServerConfiguration server)
         {
             logger.Log(nameof(ModelsController), $"Model selection changed to '{server.Name}'. endpoint={server.Endpoint}.");
@@ -38,6 +43,11 @@ internal sealed partial class ModelsController
 
     public void HandleChatServerSelectionChanged()
     {
+        if (isSynchronizingSelection)
+        {
+            return;
+        }
+
         if (selection.ChatServerCombo.SelectedItem is VllmServerConfiguration server)
         {
             logger.Log(nameof(ModelsController), $"Chat server selection changed to '{server.Name}'. endpoint={server.Endpoint}.");
@@ -180,7 +190,15 @@ internal sealed partial class ModelsController
         {
             if (selection.ChatServerCombo.SelectedItem is not null && connectedServers.Count == 0)
             {
-                selection.ChatServerCombo.SelectedItem = null;
+                isSynchronizingSelection = true;
+                try
+                {
+                    selection.ChatServerCombo.SelectedItem = null;
+                }
+                finally
+                {
+                    isSynchronizingSelection = false;
+                }
             }
 
             return;
@@ -188,7 +206,15 @@ internal sealed partial class ModelsController
 
         if (!ReferenceEquals(selection.ChatServerCombo.SelectedItem, preferredServer))
         {
-            selection.ChatServerCombo.SelectedItem = preferredServer;
+            isSynchronizingSelection = true;
+            try
+            {
+                selection.ChatServerCombo.SelectedItem = preferredServer;
+            }
+            finally
+            {
+                isSynchronizingSelection = false;
+            }
         }
     }
 }

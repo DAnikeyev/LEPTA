@@ -27,6 +27,12 @@ internal sealed class MermaidDiagramViewCache
     public void Prefetch(string source, double fontSize, double renderWidth)
         => MermaidRenderService.Shared.Prefetch(source, fontSize, renderWidth);
 
+    public void Clear()
+    {
+        entries.Clear();
+        usedKeys.Clear();
+    }
+
     public void EndBuild()
     {
         if (usedKeys.Count == 0)

@@ -850,9 +850,9 @@
                                                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,10"><TextBlock Text="Max len" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="MaxLenBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
                                                     <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,0,10"><TextBlock Text="Port" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="PortBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
                                                     <StackPanel Grid.Row="0" Grid.Column="4" Margin="0,0,0,10"><TextBlock Text="DType" Foreground="{DynamicResource SecondaryTextBrush}" /><ComboBox x:Name="DTypeBox" Margin="0,4,0,0" SelectionChanged="ConfigurationSelectionChanged"><ComboBoxItem Content="half" /><ComboBoxItem Content="float16" /><ComboBoxItem Content="bfloat16" /><ComboBoxItem Content="float32" /><ComboBoxItem Content="auto" /></ComboBox></StackPanel>
-                                                    <StackPanel Grid.Row="1" Grid.Column="0"><TextBlock Text="GPU memory util." Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
-                                                    <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Text="GPU VRAM GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuVramBox" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
-                                                    <StackPanel Grid.Row="1" Grid.Column="4"><TextBlock Text="CPU offload GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="CpuOffloadBox" ToolTip="Host RAM budget vLLM can use for CPU offload." TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="1" Grid.Column="0"><TextBlock Text="GPU memory util." Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuBox" PreviewTextInput="DecimalBox_PreviewTextInput" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Text="GPU VRAM GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="GpuVramBox" PreviewTextInput="DecimalBox_PreviewTextInput" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
+                                                    <StackPanel Grid.Row="1" Grid.Column="4"><TextBlock Text="CPU offload GB" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="CpuOffloadBox" ToolTip="Host RAM budget vLLM can use for CPU offload." PreviewTextInput="DecimalBox_PreviewTextInput" TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
                                                     <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,10,0,0"><TextBlock Text="Ready timeout min" Foreground="{DynamicResource SecondaryTextBrush}" /><TextBox x:Name="ReadyTimeoutBox" ToolTip="How long LEPTA waits for /v1/models after Docker starts." TextChanged="ConfigurationBox_TextChanged" /></StackPanel>
                                                 </Grid>
                                             </StackPanel>
@@ -1360,11 +1360,7 @@
                                  TextWrapping="Wrap"
                                  VerticalScrollBarVisibility="Auto"
                                  TextChanged="LeptaGeneralInstructionBox_TextChanged" />
-                        <TextBlock Grid.Row="2"
-                                   Margin="0,16,0,0"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                   TextWrapping="Wrap"
-                                   Text="Per-panel request order: System Instructions from Settings → Global Instructions from this editor → Text from the clipboard → Request Instructions from the panel → hidden Panel Instructions from the selected answer format → Response." />
+
                     </Grid>
                 </Border>
             </Grid>
@@ -1407,10 +1403,6 @@
                                               <ComboBox x:Name="LeptaPanelEditorFormatCombo"
                                                         Margin="0,6,0,14"
                                                         SelectionChanged="LeptaPanelEditorFormatCombo_SelectionChanged" />
-                            <TextBlock Text="The selected format adds hidden panel instructions after your request instruction."
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       TextWrapping="Wrap"
-                                       Margin="0,-6,0,14" />
                             <TextBlock Text="Request instruction" Foreground="{DynamicResource SecondaryTextBrush}" />
                             <TextBox x:Name="LeptaPanelEditorInstructionBox"
                                                    Margin="0,6,0,14"
@@ -1440,9 +1432,9 @@
                                                            MaxLength="7"
                                                            TextChanged="LeptaPanelColorHexBox_TextChanged" />
                                               </Grid>
-                                              <UniformGrid x:Name="LeptaPanelColorOptionsGrid"
+                                                <WrapPanel x:Name="LeptaPanelColorOptionsGrid"
                                                            Margin="0,8,0,0"
-                                                           Columns="5" />
+                                                           HorizontalAlignment="Left" />
                                           </StackPanel>
                                       </ScrollViewer>
                                       <DockPanel Grid.Row="2" Margin="0,16,0,0">
@@ -1451,9 +1443,6 @@
                                     Width="120"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Click="DeleteLeptaPanelFromEditorButton_Click" />
-                            <TextBlock Foreground="{DynamicResource SecondaryTextBrush}"
-                                       VerticalAlignment="Center"
-                                        Text="Markdown panels get a hidden 'Answer format: markdown.' instruction. Mermaid panels get a hidden 'Answer format: mermaid ONLY.' instruction." />
                         </DockPanel>
                     </Grid>
                 </Border>
