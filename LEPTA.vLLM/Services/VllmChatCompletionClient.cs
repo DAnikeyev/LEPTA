@@ -41,9 +41,9 @@ public sealed class VllmChatCompletionClient
         string model,
         string prompt,
         int maxTokens = 200,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
-        => CompleteAsync(endpoint, model, prompt, maxTokens, 0.0, apiKey, cancellationToken);
+        => CompleteAsync(endpoint, model, prompt, maxTokens, 0.0, requestOverrides, cancellationToken);
 
     public async Task<CompletionResult> CompleteAsync(
         string endpoint,
@@ -51,7 +51,7 @@ public sealed class VllmChatCompletionClient
         string prompt,
         int maxTokens,
         double temperature,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         logger.Log(nameof(VllmChatCompletionClient), $"Preparing text completion request for model '{model}' at {endpoint.TrimEnd('/')}/v1/completions. promptLength={prompt.Length}, maxTokens={maxTokens}, temperature={temperature}.");
@@ -59,7 +59,7 @@ public sealed class VllmChatCompletionClient
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var (response, elapsed) = await PostAsync(endpoint, "/v1/completions", content, apiKey, cancellationToken);
+        var (response, elapsed) = await PostAsync(endpoint, "/v1/completions", content, requestOverrides, cancellationToken);
 
         var result = await response.Content.ReadFromJsonAsync<CompletionResponse>(JsonOptions, cancellationToken)
             ?? throw new InvalidOperationException("Null response from vLLM.");
@@ -81,7 +81,7 @@ public sealed class VllmChatCompletionClient
         int maxTokens = 256,
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -96,11 +96,11 @@ public sealed class VllmChatCompletionClient
         logger.Log(
             nameof(VllmChatCompletionClient),
             $"Preparing chat completion request for model '{model}' at {endpoint.TrimEnd('/')}/v1/chat/completions. messageCount={messages.Count}, maxTokens={maxTokens}, temperature={temperature}, enableThinking={(requestOptions?.EnableThinking ?? false).ToString().ToLowerInvariant()}, cacheSaltPresent={(!string.IsNullOrWhiteSpace(requestOptions?.CacheSalt)).ToString().ToLowerInvariant()}.");
-        var payload = BuildChatPayload(model, messages, maxTokens, temperature, stream: false, requestOptions);
+        var payload = BuildChatPayload(model, messages, maxTokens, temperature, stream: false, requestOptions, requestOverrides);
 
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var (response, elapsed) = await PostAsync(endpoint, "/v1/chat/completions", content, apiKey, cancellationToken);
+        var (response, elapsed) = await PostAsync(endpoint, "/v1/chat/completions", content, requestOverrides, cancellationToken);
 
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(responseBody);
@@ -121,7 +121,7 @@ public sealed class VllmChatCompletionClient
         int maxTokens = 700,
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -136,7 +136,7 @@ public sealed class VllmChatCompletionClient
         logger.Log(
             nameof(VllmChatCompletionClient),
             $"Preparing streaming chat request for model '{model}' at {endpoint.TrimEnd('/')}/v1/chat/completions. messageCount={messages.Count}, maxTokens={maxTokens}, temperature={temperature}, enableThinking={(requestOptions?.EnableThinking ?? false).ToString().ToLowerInvariant()}, cacheSaltPresent={(!string.IsNullOrWhiteSpace(requestOptions?.CacheSalt)).ToString().ToLowerInvariant()}.");
-        var payload = BuildChatPayload(model, messages, maxTokens, temperature, stream: true, requestOptions);
+        var payload = BuildChatPayload(model, messages, maxTokens, temperature, stream: true, requestOptions, requestOverrides);
 
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         using HttpRequestMessage request = new(
@@ -145,10 +145,7 @@ public sealed class VllmChatCompletionClient
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-        }
+        requestOverrides?.ApplyTo(request);
 
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -261,7 +258,7 @@ public sealed class VllmChatCompletionClient
         string endpoint,
         string relativePath,
         HttpContent content,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -272,10 +269,7 @@ public sealed class VllmChatCompletionClient
         {
             Content = content
         };
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-        }
+        requestOverrides?.ApplyTo(request);
 
         var response = await httpClient.SendAsync(request, cancellationToken);
         sw.Stop();
@@ -304,7 +298,8 @@ public sealed class VllmChatCompletionClient
         int maxTokens,
         double temperature,
         bool stream,
-        VllmRequestOptions? requestOptions)
+        VllmRequestOptions? requestOptions,
+        ExternalRequestOverrides? requestOverrides)
     {
         var payload = new Dictionary<string, object?>
         {
@@ -323,6 +318,18 @@ public sealed class VllmChatCompletionClient
         if (!string.IsNullOrWhiteSpace(requestOptions?.CacheSalt))
         {
             payload["cache_salt"] = requestOptions.CacheSalt;
+        }
+
+        // Merge provider-specific extra body fields. User-provided values win over LEPTA defaults.
+        if (requestOverrides?.ExtraBody is { Count: > 0 } extraBody)
+        {
+            foreach (var pair in extraBody)
+            {
+                if (!string.IsNullOrWhiteSpace(pair.Key))
+                {
+                    payload[pair.Key] = pair.Value;
+                }
+            }
         }
 
         return payload;

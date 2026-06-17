@@ -58,7 +58,7 @@ Contains:
 
 Key responsibility: everything needed to talk to or manage a vLLM-style backend.
 
-### `LEPTA.Infrastracture/`
+### `LEPTA.Infrastructure/`
 General supporting infrastructure referenced by the app.
 
 ### `LEPTA.Tests/`

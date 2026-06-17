@@ -98,7 +98,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         bool enableThinking = false,
         double temperature = 0.1,
         int maxModelLength = 8192,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -127,7 +127,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
                 maxTokens: maxTokens,
                 temperature: normalizedTemperature,
                 requestOptions: requestOptions,
-                apiKey: apiKey,
+                requestOverrides: requestOverrides,
                 cancellationToken: cancellationToken);
 
             var repaired = StripMermaidFence(completion.AssistantText);
@@ -169,7 +169,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         double temperature = LeptaSettings.DefaultTemperature,
         string? sharedCacheSalt = null,
         bool sharedPrefixAlreadyWarm = false,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -200,11 +200,11 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
 
         if (shouldWarmSharedPrefix && !sharedPrefixAlreadyWarm)
         {
-            await WarmSharedPrefixAsync(endpoint, model, sharedPromptPrefix, requestOptions, apiKey, cancellationToken);
+            await WarmSharedPrefixAsync(endpoint, model, sharedPromptPrefix, requestOptions, requestOverrides, cancellationToken);
         }
 
         var tasks = panels
-            .Select((panel, index) => GeneratePanelAsync(endpoint, model, sharedPromptPrefix, panel, index, requestOptions, normalizedTemperature, onToken, onPanelCompleted, apiKey, cancellationToken))
+            .Select((panel, index) => GeneratePanelAsync(endpoint, model, sharedPromptPrefix, panel, index, requestOptions, normalizedTemperature, onToken, onPanelCompleted, requestOverrides, cancellationToken))
             .ToArray();
 
         return await Task.WhenAll(tasks);
@@ -216,7 +216,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         string sharedPromptPrefix,
         VllmRequestOptions? requestOptions = null,
         int maxTokens = ClipboardCachePrefillMaxTokens,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -235,7 +235,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
             requestOptions ?? new VllmRequestOptions(),
             normalizedMaxTokens,
             temperature: 0.0,
-            apiKey,
+            requestOverrides,
             cancellationToken);
     }
 
@@ -249,7 +249,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         double temperature,
         Action<int, string>? onToken,
         Action<int>? onPanelCompleted,
-        string? apiKey,
+        ExternalRequestOverrides? requestOverrides,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -271,7 +271,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
                                systemPrompt: systemPrompt,
                                temperature: temperature,
                                requestOptions: requestOptions,
-                               apiKey: apiKey,
+                               requestOverrides: requestOverrides,
                                cancellationToken: cancellationToken))
             {
                 builder.Append(token);
@@ -354,7 +354,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         string model,
         string sharedPromptPrefix,
         VllmRequestOptions requestOptions,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         logger.Log(nameof(LeptaRequestOrchestrator), $"Warming shared prompt prefix cache for model '{model}'. prefixLength={sharedPromptPrefix.Length}.");
@@ -365,7 +365,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
             requestOptions,
             maxTokens: 8,
             temperature: 0.0,
-            apiKey,
+            requestOverrides,
             cancellationToken);
     }
 
@@ -376,7 +376,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
         VllmRequestOptions requestOptions,
         int maxTokens,
         double temperature,
-        string? apiKey = null,
+        ExternalRequestOverrides? requestOverrides = null,
         CancellationToken cancellationToken = default)
     {
         await conversationService.SendAsync(
@@ -388,7 +388,7 @@ public sealed class LeptaRequestOrchestrator(VllmConversationService conversatio
             maxTokens: maxTokens,
             temperature: temperature,
             requestOptions: requestOptions,
-            apiKey: apiKey,
+            requestOverrides: requestOverrides,
             cancellationToken: cancellationToken);
     }
 

@@ -436,14 +436,6 @@
                                  ToolTipService.HorizontalOffset="18"
                                   AutomationProperties.Name="Models"
                                  Checked="NavigationButton_Checked" />
-                    <RadioButton x:Name="SettingsTabButton"
-                                 GroupName="Navigation"
-                                 Style="{StaticResource NavigationButton}"
-                                 ToolTip="Settings"
-                                 ToolTipService.Placement="Mouse"
-                                 ToolTipService.HorizontalOffset="18"
-                                  AutomationProperties.Name="Settings"
-                                 Checked="NavigationButton_Checked" />
                     <RadioButton x:Name="ChatTabButton"
                                  GroupName="Navigation"
                                  Style="{StaticResource NavigationButton}"
@@ -451,6 +443,14 @@
                                  ToolTipService.Placement="Mouse"
                                  ToolTipService.HorizontalOffset="18"
                                   AutomationProperties.Name="Chat"
+                                 Checked="NavigationButton_Checked" />
+                    <RadioButton x:Name="SettingsTabButton"
+                                 GroupName="Navigation"
+                                 Style="{StaticResource NavigationButton}"
+                                 ToolTip="Settings"
+                                 ToolTipService.Placement="Mouse"
+                                 ToolTipService.HorizontalOffset="18"
+                                  AutomationProperties.Name="Settings"
                                  Checked="NavigationButton_Checked" />
                 </StackPanel>
             </Grid>
@@ -791,8 +791,52 @@
                                         </Grid>
                                         <Grid x:Name="ApiKeyRow" Margin="0,0,0,10">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="130" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="API key" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                                            <TextBox x:Name="ApiKeyBox" Grid.Column="1" TextChanged="ConfigurationBox_TextChanged" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="API key" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                <Grid Margin="0,2,0,8">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                    <PasswordBox x:Name="ApiKeyBox" PasswordChanged="ApiKeyBox_PasswordChanged" />
+                                                    <TextBox x:Name="ApiKeyRevealBox" Grid.Column="0" Visibility="Collapsed" TextChanged="ApiKeyRevealBox_TextChanged" />
+                                                    <CheckBox x:Name="ApiKeyRevealCheckBox" Grid.Column="1" Content="Show" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                              Foreground="{DynamicResource SecondaryTextBrush}" Checked="ApiKeyRevealCheckBox_Changed" Unchecked="ApiKeyRevealCheckBox_Changed" />
+                                                </Grid>
+
+                                                <TextBlock Text="Authentication header" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                <TextBlock Text="Where the API key is sent. Most providers use the default (Authorization: Bearer). Azure uses header name &quot;api-key&quot;; some gateways use &quot;X-API-Key&quot;."
+                                                           Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,2,0,4" />
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="Header name" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                    <TextBlock Grid.Column="2" Text="Scheme (Authorization only)" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                    <TextBox x:Name="AuthHeaderNameBox" Grid.Row="1" Grid.Column="0" TextChanged="ConfigurationBox_TextChanged" />
+                                                    <TextBox x:Name="AuthHeaderSchemeBox" Grid.Row="1" Grid.Column="2" TextChanged="ConfigurationBox_TextChanged" />
+                                                </Grid>
+
+                                                <TextBlock Text="Extra HTTP headers (optional)" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                <TextBlock Text="One per line, as Name: Value. Leave empty if your provider only needs the API key."
+                                                           Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,2,0,4" />
+                                                <TextBox x:Name="ExtraHeadersBox" AcceptsReturn="True" Height="60" Margin="0,0,0,8" VerticalScrollBarVisibility="Auto"
+                                                         TextChanged="ConfigurationBox_TextChanged" />
+
+                                                <TextBlock Text="Extra JSON body fields (optional)" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                <TextBlock Text="A JSON object merged into every request body, e.g. {&quot;user&quot;:&quot;user-123&quot;}. Leave empty if not needed."
+                                                           Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,2,0,4" />
+                                                <TextBox x:Name="ExtraBodyBox" AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto" Margin="0,0,0,4"
+                                                         TextChanged="ConfigurationBox_TextChanged" />
+                                                <TextBlock x:Name="RequestOverridesErrorText" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                            </StackPanel>
+                                            <TextBlock Text="Authentication" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Top" Margin="0,4,0,0" />
+                                        </Grid>
+                                        <Grid x:Name="ServedModelsRow" Margin="0,0,0,10" Visibility="Collapsed">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="130" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Served models" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Column="1">
+                                                <ComboBox x:Name="ServedModelsCombo" SelectionChanged="ServedModelsCombo_SelectionChanged"
+                                                          ToolTip="Models reported by /v1/models. Choose one to use it as the model name." />
+                                                <TextBlock x:Name="ServedModelsHintText" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,2,0,0"
+                                                           Text="Use Check server to list the models this server serves." TextWrapping="Wrap" />
+                                            </StackPanel>
                                         </Grid>
                                         <Grid x:Name="ServedModelNameRow">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="130" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>

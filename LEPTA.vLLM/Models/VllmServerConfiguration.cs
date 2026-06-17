@@ -1,6 +1,4 @@
-﻿using System.IO;
-using System.Text;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace LEPTA.vLLM.Models;
 
@@ -37,7 +35,27 @@ public sealed record VllmServerConfiguration
     public int MaxNumSeqs { get; set; } = 5;
     public bool EnableTokenizersParallelism { get; set; } = true;
     public string AdditionalVllmArguments { get; set; } = string.Empty;
-    public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Authentication, custom headers, and extra body fields applied to outbound requests
+    /// for external OpenAI-compatible servers. Serialized; the legacy <see cref="ApiKey"/>
+    /// property is a shim that proxies into this for backward compatibility.
+    /// </summary>
+    public ExternalRequestOverrides RequestOverrides { get; set; } = new();
+
+    /// <summary>
+    /// Legacy API-key accessor. Reads/writes <see cref="ExternalRequestOverrides.ApiKey"/>. Never
+    /// serialized (the canonical form is <see cref="RequestOverrides"/>); legacy stores that stored
+    /// a top-level <c>ApiKey</c> are migrated into <see cref="RequestOverrides"/> on load by
+    /// <see cref="Services.VllmServerConfigurationStore"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string ApiKey
+    {
+        get => RequestOverrides.ApiKey ?? string.Empty;
+        set => RequestOverrides.ApiKey = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     public bool EnablePrefixCaching { get; set; }
     public bool LanguageModelOnly { get; set; }
     public string? ReasoningParser { get; set; }
@@ -48,41 +66,41 @@ public sealed record VllmServerConfiguration
     public int? DetectedLayerCount { get; set; }
     public IReadOnlyList<string> AvailableWeightQuantizations { get; set; } = Array.Empty<string>();
     [JsonIgnore]
-    public string UiStatusKind { get; set; } = "Unknown";
+    public ServerStatusKind UiStatusKind { get; set; } = ServerStatusKind.Unknown;
     [JsonIgnore]
     public string UiStatusText { get; set; } = "Not checked";
     [JsonIgnore]
     public string UiStatusDetails { get; set; } = "Select the profile or use Check server to verify it.";
     public bool SupportsLifecycleManagement => !UseExistingHttpServer;
 
-    public int MaxOutputTokens => Math.Max(256, MaxModelLength / 4);
-    public int MaxContextTokens => Math.Max(512, MaxModelLength / 2);
-    public int MaxDocumentTokens => Math.Max(512, MaxModelLength * 3 / 4);
+    public int MaxOutputTokens => VllmServerCalculations.ResolveMaxOutputTokens(MaxModelLength);
+    public int MaxContextTokens => VllmServerCalculations.ResolveMaxContextTokens(MaxModelLength);
+    public int MaxDocumentTokens => VllmServerCalculations.ResolveMaxDocumentTokens(MaxModelLength);
     [JsonIgnore]
     public bool IsLeptaManagedDeploymentActive => SupportsLifecycleManagement && HasEstablishedConnection;
     [JsonIgnore]
     public string UiTypeLabel => UseExistingHttpServer ? "External server" : "LEPTA-managed local";
     [JsonIgnore]
-    public bool HasEstablishedConnection => string.Equals(UiStatusKind, "Ready", StringComparison.OrdinalIgnoreCase);
+    public bool HasEstablishedConnection => UiStatusKind == ServerStatusKind.Ready;
     public bool SupportsThinking
         => !string.IsNullOrWhiteSpace(ReasoningParser)
-           || LooksLikeThinkingModel(ServedModelName)
-           || LooksLikeThinkingModel(Model)
-           || LooksLikeThinkingModel(LocalModelPath);
+           || VllmServerCalculations.LooksLikeThinkingModel(ServedModelName)
+           || VllmServerCalculations.LooksLikeThinkingModel(Model)
+           || VllmServerCalculations.LooksLikeThinkingModel(LocalModelPath);
     [JsonIgnore]
     public string EffectiveDockerImage => string.IsNullOrWhiteSpace(DockerImage)
         ? DefaultDockerImage
         : DockerImage.Trim();
-    public string ContainerName => $"lepta-vllm-{Sanitize(Name)}";
+    public string ContainerName => $"lepta-vllm-{VllmServerCalculations.SanitizeContainerName(Name)}";
     public string Endpoint => UseExistingHttpServer
-        ? NormalizeHttpServerAddress(HttpServerAddress, HostPort)
+        ? VllmServerCalculations.NormalizeHttpServerAddress(HttpServerAddress, HostPort)
         : $"http://localhost:{HostPort}";
     public string EffectiveServedModelName => !string.IsNullOrWhiteSpace(ServedModelName)
         ? ServedModelName.Trim()
-        : $"{ResolveModelLabel()}-local";
+        : $"{VllmServerCalculations.ResolveModelLabel(Name, Model, LocalModelPath)}-local";
     [JsonIgnore]
     public string UiEndpointLabel => UseExistingHttpServer
-        ? NormalizeHttpServerAddress(HttpServerAddress, HostPort)
+        ? VllmServerCalculations.NormalizeHttpServerAddress(HttpServerAddress, HostPort)
         : $"Runs at http://localhost:{HostPort}";
 
     public static string ResolveSuggestedAdditionalVllmArguments(
@@ -91,86 +109,12 @@ public sealed record VllmServerConfiguration
         string? localModelPath,
         string? architecture,
         string? reasoningParser)
-        => LooksLikeQwen(displayName)
-           || LooksLikeQwen(model)
-           || LooksLikeQwen(localModelPath)
-           || LooksLikeQwen(architecture)
-           || string.Equals(reasoningParser, "qwen3", StringComparison.OrdinalIgnoreCase)
-            ? QwenMtpSpeculativeArguments
-            : string.Empty;
-
-    private static string Sanitize(string value)
-    {
-        var builder = new StringBuilder(value.Length);
-        var previousWasSeparator = false;
-        foreach (var character in value.ToLowerInvariant())
-        {
-            if (char.IsLetterOrDigit(character))
-            {
-                builder.Append(character);
-                previousWasSeparator = false;
-                continue;
-            }
-
-            if (!previousWasSeparator)
-            {
-                builder.Append('-');
-                previousWasSeparator = true;
-            }
-        }
-
-        var sanitized = builder.ToString().Trim('-');
-        return string.IsNullOrWhiteSpace(sanitized) ? "server" : sanitized;
-    }
-
-    private static string NormalizeHttpServerAddress(string? value, int fallbackPort)
-    {
-        var normalized = string.IsNullOrWhiteSpace(value)
-            ? $"http://localhost:{fallbackPort}"
-            : value.Trim();
-
-        if (!normalized.Contains("://", StringComparison.Ordinal))
-        {
-            normalized = $"http://{normalized}";
-        }
-
-        return normalized.TrimEnd('/');
-    }
-
-    private string ResolveModelLabel()
-    {
-        if (!string.IsNullOrWhiteSpace(LocalModelPath))
-        {
-            var folderName = Path.GetFileName(Path.TrimEndingDirectorySeparator(LocalModelPath));
-            if (!string.IsNullOrWhiteSpace(folderName))
-            {
-                return folderName;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(Model))
-        {
-            var trimmed = Model.Trim().TrimEnd('/');
-            var slashIndex = trimmed.LastIndexOf('/');
-            return slashIndex >= 0 ? trimmed[(slashIndex + 1)..] : trimmed;
-        }
-
-        return Sanitize(Name);
-    }
-
-    private static bool LooksLikeThinkingModel(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        return LooksLikeQwen(value)
-               || value.Contains("reasoning", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool LooksLikeQwen(string? value)
-        => !string.IsNullOrWhiteSpace(value)
-           && value.Contains("qwen", StringComparison.OrdinalIgnoreCase);
+        => VllmServerCalculations.ResolveSuggestedAdditionalVllmArguments(
+            displayName,
+            model,
+            localModelPath,
+            architecture,
+            reasoningParser,
+            QwenMtpSpeculativeArguments);
 }
 

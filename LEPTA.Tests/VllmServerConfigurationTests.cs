@@ -11,7 +11,7 @@ public sealed class VllmServerConfigurationTests
         var configuration = new VllmServerConfiguration
         {
             UseExistingHttpServer = true,
-            UiStatusKind = "Ready"
+            UiStatusKind = ServerStatusKind.Ready
         };
 
         Assert.That(configuration.IsLeptaManagedDeploymentActive, Is.False);
@@ -23,7 +23,7 @@ public sealed class VllmServerConfigurationTests
         var configuration = new VllmServerConfiguration
         {
             UseExistingHttpServer = false,
-            UiStatusKind = "Warning"
+            UiStatusKind = ServerStatusKind.Warning
         };
 
         Assert.That(configuration.IsLeptaManagedDeploymentActive, Is.False);
@@ -35,7 +35,7 @@ public sealed class VllmServerConfigurationTests
         var configuration = new VllmServerConfiguration
         {
             UseExistingHttpServer = false,
-            UiStatusKind = "Ready"
+            UiStatusKind = ServerStatusKind.Ready
         };
 
         Assert.That(configuration.IsLeptaManagedDeploymentActive, Is.True);

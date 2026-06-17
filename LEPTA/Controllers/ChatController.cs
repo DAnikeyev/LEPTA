@@ -293,7 +293,7 @@ internal sealed partial class ChatController
                 systemPrompt: resolvedSystemPrompt,
                 maxTokens: ChatResponseMaxTokens,
                 requestOptions: requestOptions,
-                apiKey: selectedServer.ApiKey,
+                requestOverrides: selectedServer.RequestOverrides,
                 cancellationToken: linkedCancellation.Token);
 
             sendStopwatch.Stop();
@@ -447,7 +447,7 @@ internal sealed partial class ChatController
                 maxTokens: 20,
                 temperature: 0.3,
                 requestOptions: titleRequestOptions,
-                apiKey: selectedServer.ApiKey);
+                requestOverrides: selectedServer.RequestOverrides);
 
             var generatedTitle = result.AssistantText.Trim().Trim('"', '\'').Trim();
             if (!string.IsNullOrWhiteSpace(generatedTitle) && generatedTitle.Length <= 80)

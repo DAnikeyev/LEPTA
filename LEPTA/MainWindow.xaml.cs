@@ -171,6 +171,9 @@ public partial class MainWindow : Window
                     DeploymentModeBox = DeploymentModeBox,
                     HttpServerRow = HttpServerRow,
                     ApiKeyRow = ApiKeyRow,
+                    ServedModelsRow = ServedModelsRow,
+                    ServedModelsCombo = ServedModelsCombo,
+                    ServedModelsHintText = ServedModelsHintText,
                     HttpServerAddressBox = HttpServerAddressBox,
                     ModelFieldLabelText = ModelFieldLabelText,
                     ModelBox = ModelBox,
@@ -197,6 +200,13 @@ public partial class MainWindow : Window
                     TokenizersParallelismBox = TokenizersParallelismBox,
                     AdditionalVllmArgumentsBox = AdditionalVllmArgumentsBox,
                     ApiKeyBox = ApiKeyBox,
+                    ApiKeyRevealBox = ApiKeyRevealBox,
+                    ApiKeyRevealCheckBox = ApiKeyRevealCheckBox,
+                    AuthHeaderNameBox = AuthHeaderNameBox,
+                    AuthHeaderSchemeBox = AuthHeaderSchemeBox,
+                    ExtraHeadersBox = ExtraHeadersBox,
+                    ExtraBodyBox = ExtraBodyBox,
+                    RequestOverridesErrorText = RequestOverridesErrorText,
                     CpuOffloadBox = CpuOffloadBox,
                     MaxNumSeqsBox = MaxNumSeqsBox,
                     VerboseLogsCheckBox = VerboseLogsCheckBox
@@ -629,6 +639,18 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
 
     private void ConfigurationBox_TextChanged(object sender, TextChangedEventArgs e)
         => modelsController?.HandleConfigurationChanged();
+
+    private void ApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+        => modelsController?.HandleConfigurationChanged();
+
+    private void ApiKeyRevealBox_TextChanged(object sender, TextChangedEventArgs e)
+        => modelsController?.HandleRevealApiKeyChanged();
+
+    private void ApiKeyRevealCheckBox_Changed(object sender, RoutedEventArgs e)
+        => modelsController?.HandleApiKeyRevealChanged();
+
+    private void ServedModelsCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => modelsController?.HandleServedModelSelected();
 
     private void DecimalBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
     {

@@ -92,7 +92,7 @@ internal sealed partial class LeptaController
                     enableThinking: server.SupportsThinking && run.ThinkingCheckBox.IsChecked == true,
                     temperature: currentTemperature,
                     maxModelLength: server.MaxModelLength,
-                    apiKey: server.ApiKey,
+                    requestOverrides: server.RequestOverrides,
                     cancellationToken: cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(repairResponse.Error) || string.IsNullOrWhiteSpace(repairResponse.Text))

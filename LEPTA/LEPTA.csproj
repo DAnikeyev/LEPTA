@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LEPTA.Shared\LEPTA.Shared.csproj" />
-    <ProjectReference Include="..\LEPTA.Infrastracture\LEPTA.Infrastracture.csproj" />
     <ProjectReference Include="..\LEPTA.vLLM\LEPTA.vLLM.csproj" />
   </ItemGroup>
 

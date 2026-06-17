@@ -33,6 +33,12 @@ internal sealed class ModelsConfigurationViews
 
     public required FrameworkElement ApiKeyRow { get; init; }
 
+    public required FrameworkElement ServedModelsRow { get; init; }
+
+    public required ComboBox ServedModelsCombo { get; init; }
+
+    public required TextBlock ServedModelsHintText { get; init; }
+
     public required TextBox HttpServerAddressBox { get; init; }
 
     public required TextBlock ModelFieldLabelText { get; init; }
@@ -83,7 +89,21 @@ internal sealed class ModelsConfigurationViews
 
     public required TextBox AdditionalVllmArgumentsBox { get; init; }
 
-    public required TextBox ApiKeyBox { get; init; }
+    public required System.Windows.Controls.PasswordBox ApiKeyBox { get; init; }
+
+    public required TextBox ApiKeyRevealBox { get; init; }
+
+    public required CheckBox ApiKeyRevealCheckBox { get; init; }
+
+    public required TextBox AuthHeaderNameBox { get; init; }
+
+    public required TextBox AuthHeaderSchemeBox { get; init; }
+
+    public required TextBox ExtraHeadersBox { get; init; }
+
+    public required TextBox ExtraBodyBox { get; init; }
+
+    public required TextBlock RequestOverridesErrorText { get; init; }
 
     public required TextBox CpuOffloadBox { get; init; }
 

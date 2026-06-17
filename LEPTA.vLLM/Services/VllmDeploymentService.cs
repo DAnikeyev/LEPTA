@@ -147,17 +147,14 @@ public sealed class VllmDeploymentService
         }
 
         var endpoint = validation.NormalizedEndpoint;
-        var hasApiKey = !string.IsNullOrWhiteSpace(configuration.ApiKey)
-            && configuration.ApiKey != "sk-or-v1-...";
+        var hasApiKey = !string.IsNullOrWhiteSpace(configuration.RequestOverrides.ApiKey)
+            && configuration.RequestOverrides.ApiKey != "sk-or-v1-...";
         logger.Log(nameof(VllmDeploymentService), $"Checking model accessibility via GET {endpoint}/v1/models. hasApiKey={hasApiKey}.");
 
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, $"{endpoint}/v1/models");
-            if (hasApiKey)
-            {
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", configuration.ApiKey);
-            }
+            configuration.RequestOverrides.ApplyTo(request);
 
             using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)

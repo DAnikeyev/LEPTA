@@ -27,16 +27,23 @@ internal static class LeptaNLogBootstrapper
             Encoding = Encoding.UTF8
         };
 
-        var consoleTarget = new ColoredConsoleTarget("lepta-console")
-        {
-            Layout = layout,
-            DetectConsoleAvailable = true
-        };
-
         config.AddTarget(fileTarget);
-        config.AddTarget(consoleTarget);
         config.AddRuleForAllLevels(fileTarget);
-        config.AddRuleForAllLevels(consoleTarget);
+
+        // A console window is only attached in development. Ship builds (WinExe, no debugger,
+        // no LEPTA_CONSOLE_LOGS env var) must stay quiet and never pop a console.
+        var enableConsole = System.Diagnostics.Debugger.IsAttached
+            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("LEPTA_CONSOLE_LOGS"));
+        if (enableConsole)
+        {
+            var consoleTarget = new ColoredConsoleTarget("lepta-console")
+            {
+                Layout = layout,
+                DetectConsoleAvailable = true
+            };
+            config.AddTarget(consoleTarget);
+            config.AddRuleForAllLevels(consoleTarget);
+        }
 
         LogManager.Configuration = config;
     }

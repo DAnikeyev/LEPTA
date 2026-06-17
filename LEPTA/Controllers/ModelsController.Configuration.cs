@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.IO;
+using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using LEPTA.Theming;
@@ -50,7 +52,7 @@ internal sealed partial class ModelsController
         }
 
         server.AdditionalVllmArguments = config.AdditionalVllmArgumentsBox.Text.Trim();
-        server.ApiKey = config.ApiKeyBox.Text.Trim();
+        ApplyRequestOverridesFromUi(server);
         if (int.TryParse(config.MaxNumSeqsBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxNumSeqs)) server.MaxNumSeqs = maxNumSeqs;
         server.EnableVerboseLogs = config.VerboseLogsCheckBox.IsChecked == true;
         ApplyAutomaticLocalModelFields(server);
@@ -120,7 +122,8 @@ internal sealed partial class ModelsController
             SetComboBoxValue(config.VCacheQuantizationBox, server.VCacheQuantization);
             SetComboBoxValue(config.TokenizersParallelismBox, server.EnableTokenizersParallelism ? "true" : "false");
             config.AdditionalVllmArgumentsBox.Text = GetAdditionalVllmArgumentsForEditing(server);
-            config.ApiKeyBox.Text = server.ApiKey;
+            LoadRequestOverridesIntoUi(server);
+            ClearServedModels();
             config.MaxNumSeqsBox.Text = server.MaxNumSeqs.ToString(CultureInfo.InvariantCulture);
             config.VerboseLogsCheckBox.IsChecked = server.EnableVerboseLogs;
         }
@@ -162,7 +165,8 @@ internal sealed partial class ModelsController
             config.VCacheQuantizationBox.SelectedIndex = -1;
             config.TokenizersParallelismBox.SelectedIndex = -1;
             config.AdditionalVllmArgumentsBox.Text = string.Empty;
-            config.ApiKeyBox.Text = string.Empty;
+            ClearRequestOverridesUi();
+            ClearServedModels();
             config.MaxNumSeqsBox.Text = string.Empty;
             config.VerboseLogsCheckBox.IsChecked = false;
             deploy.EstimatedVramText.Text = string.Empty;
@@ -350,6 +354,11 @@ internal sealed partial class ModelsController
 
         config.HttpServerRow.Visibility = isExternal ? Visibility.Visible : Visibility.Collapsed;
         config.ApiKeyRow.Visibility = isExternal ? Visibility.Visible : Visibility.Collapsed;
+        config.ServedModelsRow.Visibility = isExternal ? Visibility.Visible : Visibility.Collapsed;
+        if (!isExternal)
+        {
+            ClearServedModels();
+        }
         config.LocalFolderRow.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         config.ServedModelNameRow.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         config.LocalMetadataBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
@@ -372,7 +381,7 @@ internal sealed partial class ModelsController
         {
             SetServerStatus(
                 server,
-                "Unknown",
+                ServerStatusKind.Unknown,
                 string.IsNullOrWhiteSpace(server.HttpServerAddress) ? "Address required" : "Not checked",
                 string.IsNullOrWhiteSpace(server.HttpServerAddress)
                     ? "Enter an HTTP server address for this external profile."
@@ -383,14 +392,14 @@ internal sealed partial class ModelsController
         var composePath = deploymentService.CreateComposeConfiguration(server, composeDirectory).ComposeFilePath;
         SetServerStatus(
             server,
-            File.Exists(composePath) ? "Warning" : "Unknown",
+            File.Exists(composePath) ? ServerStatusKind.Warning : ServerStatusKind.Unknown,
             File.Exists(composePath) ? "Stopped" : "Configured",
             File.Exists(composePath)
                 ? "Saved deployment assets exist for this local profile, but the server has not been verified yet."
                 : "Configure the local model and choose Run server when you're ready.");
     }
 
-    private void SetServerStatus(VllmServerConfiguration server, string kind, string text, string details)
+    private void SetServerStatus(VllmServerConfiguration server, ServerStatusKind kind, string text, string details)
     {
         server.UiStatusKind = kind;
         server.UiStatusText = text;
@@ -544,7 +553,14 @@ internal sealed partial class ModelsController
         config.VCacheQuantizationBox.IsEnabled = isEnabled;
         config.TokenizersParallelismBox.IsEnabled = isEnabled;
         config.AdditionalVllmArgumentsBox.IsEnabled = isEnabled;
+        config.ServedModelsCombo.IsEnabled = isEnabled;
         config.ApiKeyBox.IsEnabled = isEnabled;
+        config.ApiKeyRevealBox.IsEnabled = isEnabled;
+        config.ApiKeyRevealCheckBox.IsEnabled = isEnabled;
+        config.AuthHeaderNameBox.IsEnabled = isEnabled;
+        config.AuthHeaderSchemeBox.IsEnabled = isEnabled;
+        config.ExtraHeadersBox.IsEnabled = isEnabled;
+        config.ExtraBodyBox.IsEnabled = isEnabled;
         config.MaxNumSeqsBox.IsEnabled = isEnabled;
         config.VerboseLogsCheckBox.IsEnabled = isEnabled;
         deploy.OpenAdvancedConfigurationButton.IsEnabled = isEnabled && SelectedServer?.UseExistingHttpServer != true;
@@ -560,6 +576,285 @@ internal sealed partial class ModelsController
         }
 
         return fallback;
+    }
+
+    private string GetCurrentApiKey()
+        => config.ApiKeyRevealCheckBox.IsChecked == true
+            ? config.ApiKeyRevealBox.Text
+            : config.ApiKeyBox.Password;
+
+    private void SetCurrentApiKey(string value)
+    {
+        config.ApiKeyBox.Password = value;
+        config.ApiKeyRevealBox.Text = value;
+    }
+
+    /// <summary>Reveal-toggle changed: swap the masked PasswordBox for the plain TextBox, keeping values in sync.</summary>
+    public void HandleApiKeyRevealChanged()
+    {
+        if (isLoadingConfiguration)
+        {
+            return;
+        }
+
+        var reveal = config.ApiKeyRevealCheckBox.IsChecked == true;
+        if (reveal)
+        {
+            config.ApiKeyRevealBox.Text = config.ApiKeyBox.Password;
+            config.ApiKeyRevealBox.Visibility = Visibility.Visible;
+            config.ApiKeyBox.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            config.ApiKeyBox.Password = config.ApiKeyRevealBox.Text;
+            config.ApiKeyRevealBox.Visibility = Visibility.Collapsed;
+            config.ApiKeyBox.Visibility = Visibility.Visible;
+        }
+    }
+
+    /// <summary>Revealed text changed: propagate back to the PasswordBox and re-evaluate the profile.</summary>
+    public void HandleRevealApiKeyChanged()
+    {
+        if (isLoadingConfiguration || config.ApiKeyRevealCheckBox.IsChecked != true)
+        {
+            return;
+        }
+
+        config.ApiKeyBox.Password = config.ApiKeyRevealBox.Text;
+        HandleConfigurationChanged();
+    }
+
+    private void ApplyRequestOverridesFromUi(VllmServerConfiguration server)
+    {
+        var overrides = server.RequestOverrides;
+        overrides.ApiKey = string.IsNullOrWhiteSpace(GetCurrentApiKey()) ? null : GetCurrentApiKey().Trim();
+        overrides.AuthHeaderName = string.IsNullOrWhiteSpace(config.AuthHeaderNameBox.Text)
+            ? "Authorization"
+            : config.AuthHeaderNameBox.Text.Trim();
+        overrides.AuthHeaderScheme = string.IsNullOrWhiteSpace(config.AuthHeaderSchemeBox.Text)
+            ? "Bearer"
+            : config.AuthHeaderSchemeBox.Text.Trim();
+        overrides.Headers = ParseExtraHeaders(config.ExtraHeadersBox.Text);
+
+        var extraBodyError = TryParseExtraBody(config.ExtraBodyBox.Text, out var extraBody);
+        if (extraBodyError is null)
+        {
+            overrides.ExtraBody = extraBody ?? new Dictionary<string, JsonElement>();
+        }
+
+        var validation = new VllmServerProfileValidator().ValidateRequestOverrides(overrides);
+        if (validation.IsValid && extraBodyError is null)
+        {
+            config.RequestOverridesErrorText.Visibility = Visibility.Collapsed;
+            config.RequestOverridesErrorText.Text = string.Empty;
+        }
+        else
+        {
+            config.RequestOverridesErrorText.Text = extraBodyError ?? validation.Message;
+            config.RequestOverridesErrorText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void LoadRequestOverridesIntoUi(VllmServerConfiguration server)
+    {
+        var overrides = server.RequestOverrides;
+        SetCurrentApiKey(server.ApiKey);
+        config.ApiKeyRevealCheckBox.IsChecked = false;
+        config.ApiKeyRevealBox.Visibility = Visibility.Collapsed;
+        config.ApiKeyBox.Visibility = Visibility.Visible;
+        config.AuthHeaderNameBox.Text = string.IsNullOrWhiteSpace(overrides.AuthHeaderName) ? "Authorization" : overrides.AuthHeaderName;
+        config.AuthHeaderSchemeBox.Text = string.IsNullOrWhiteSpace(overrides.AuthHeaderScheme) ? "Bearer" : overrides.AuthHeaderScheme;
+        config.ExtraHeadersBox.Text = FormatExtraHeaders(overrides.Headers);
+        config.ExtraBodyBox.Text = FormatExtraBody(overrides.ExtraBody);
+        config.RequestOverridesErrorText.Visibility = Visibility.Collapsed;
+        config.RequestOverridesErrorText.Text = string.Empty;
+    }
+
+    private void ClearRequestOverridesUi()
+    {
+        SetCurrentApiKey(string.Empty);
+        config.ApiKeyRevealCheckBox.IsChecked = false;
+        config.ApiKeyRevealBox.Visibility = Visibility.Collapsed;
+        config.ApiKeyBox.Visibility = Visibility.Visible;
+        config.AuthHeaderNameBox.Text = string.Empty;
+        config.AuthHeaderSchemeBox.Text = string.Empty;
+        config.ExtraHeadersBox.Text = string.Empty;
+        config.ExtraBodyBox.Text = string.Empty;
+        config.RequestOverridesErrorText.Visibility = Visibility.Collapsed;
+        config.RequestOverridesErrorText.Text = string.Empty;
+    }
+
+    /// <summary>User picked a model from the served-models list — apply it as the profile's model.</summary>
+    public void HandleServedModelSelected()
+    {
+        if (isPopulatingServedModels || isLoadingConfiguration)
+        {
+            return;
+        }
+
+        if (SelectedServer is not VllmServerConfiguration server)
+        {
+            return;
+        }
+
+        if (config.ServedModelsCombo.SelectedItem is not string selected || string.IsNullOrWhiteSpace(selected))
+        {
+            return;
+        }
+
+        if (string.Equals(server.Model?.Trim(), selected, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        server.Model = selected;
+        config.ModelBox.Text = selected;
+        selection.ModelsList.Items.Refresh();
+        OnStateChanged();
+        logger.Log(nameof(ModelsController), $"Served model '{selected}' applied to '{server.Name}'.");
+    }
+
+    /// <summary>Fills the served-model picker from a successful /v1/models probe.</summary>
+    private void PopulateServedModels(VllmServerConfiguration server, IReadOnlyList<string> models)
+    {
+        isPopulatingServedModels = true;
+        try
+        {
+            config.ServedModelsCombo.Items.Clear();
+            if (models.Count == 0)
+            {
+                config.ServedModelsCombo.SelectedItem = null;
+                config.ServedModelsHintText.Text = "The server responded but listed no served models.";
+                return;
+            }
+
+            foreach (var name in models)
+            {
+                config.ServedModelsCombo.Items.Add(name);
+            }
+
+            var current = server.Model?.Trim();
+            var match = models.FirstOrDefault(name => string.Equals(name, current, StringComparison.OrdinalIgnoreCase));
+            config.ServedModelsCombo.SelectedItem = match ?? models[0];
+            config.ServedModelsHintText.Text = models.Count == 1
+                ? $"1 served model available from /v1/models."
+                : $"{models.Count} served models available from /v1/models. Pick one to use it.";
+        }
+        finally
+        {
+            isPopulatingServedModels = false;
+        }
+    }
+
+    private void ClearServedModels()
+    {
+        isPopulatingServedModels = true;
+        try
+        {
+            config.ServedModelsCombo.Items.Clear();
+            config.ServedModelsCombo.SelectedItem = null;
+            config.ServedModelsHintText.Text = "Use Check server to list the models this server serves.";
+        }
+        finally
+        {
+            isPopulatingServedModels = false;
+        }
+    }
+
+    private static Dictionary<string, string> ParseExtraHeaders(string text)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return result;
+        }
+
+        foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var separator = line.IndexOf(':', StringComparison.Ordinal);
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var name = line[..separator].Trim();
+            var value = line[(separator + 1)..].Trim();
+            if (name.Length > 0)
+            {
+                result[name] = value;
+            }
+        }
+
+        return result;
+    }
+
+    private static string FormatExtraHeaders(IReadOnlyDictionary<string, string> headers)
+    {
+        if (headers is null || headers.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(Environment.NewLine, headers.Select(pair => $"{pair.Key}: {pair.Value}"));
+    }
+
+    private static string? TryParseExtraBody(string text, out Dictionary<string, JsonElement>? extraBody)
+    {
+        extraBody = null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return "Extra body must be a JSON object (e.g. {\"user\":\"id\"}).";
+            }
+
+            var result = new Dictionary<string, JsonElement>();
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                result[property.Name] = property.Value.Clone();
+            }
+
+            extraBody = result;
+            return null;
+        }
+        catch (JsonException exception)
+        {
+            return $"Extra body is not valid JSON: {exception.Message}";
+        }
+    }
+
+    private static string FormatExtraBody(IReadOnlyDictionary<string, JsonElement> extraBody)
+    {
+        if (extraBody is null || extraBody.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+        {
+            writer.WriteStartObject();
+            foreach (var pair in extraBody)
+            {
+                writer.WritePropertyName(pair.Key);
+                pair.Value.WriteTo(writer);
+            }
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 }
 

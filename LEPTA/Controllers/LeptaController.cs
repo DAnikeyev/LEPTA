@@ -386,7 +386,7 @@ internal sealed partial class LeptaController
                     CacheSalt = cacheSalt
                 },
                 LeptaRequestOrchestrator.ClipboardCachePrefillMaxTokens,
-                apiKey: server.ApiKey,
+                requestOverrides: server.RequestOverrides,
                 cancellationToken: cancellationToken);
 
             lastClipboardPrefillServerId = server.Id;
@@ -526,7 +526,7 @@ internal sealed partial class LeptaController
                 temperature: currentTemperature,
                 sharedCacheSalt: clipboardPrefillCacheSalt,
                 sharedPrefixAlreadyWarm: !string.IsNullOrWhiteSpace(clipboardPrefillCacheSalt),
-                apiKey: server.ApiKey,
+                requestOverrides: server.RequestOverrides,
                 cancellationToken: linkedCts.Token);
 
             await CompletePanelResponseUpdatePumpAsync(updatePump);

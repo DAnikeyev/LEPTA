@@ -20,6 +20,7 @@ internal sealed partial class ModelsController
     private readonly string composeDirectory;
 
     private bool isLoadingConfiguration;
+    private bool isPopulatingServedModels;
     private bool isSynchronizingSelection;
     private VllmServerConfiguration? activeServer;
     private VllmServerConfiguration? activeActionServer;

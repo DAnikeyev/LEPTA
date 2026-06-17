@@ -286,7 +286,7 @@ internal sealed partial class ModelsController
         deploy.ModelProgress.IsIndeterminate = true;
         deploy.ChatProgress.IsIndeterminate = true;
         SetConfigurationInputsEnabled(false);
-        SetServerStatus(server, "Busy", initialMessage.Contains("Stopping", StringComparison.OrdinalIgnoreCase) ? "Stopping" : "Working", initialMessage);
+        SetServerStatus(server, ServerStatusKind.Busy, initialMessage.Contains("Stopping", StringComparison.OrdinalIgnoreCase) ? "Stopping" : "Working", initialMessage);
         selection.ModelsList.Items.Refresh();
         selection.ChatServerCombo.Items.Refresh();
         RefreshConnectedServers();
@@ -434,11 +434,11 @@ internal sealed partial class ModelsController
                 var composePath = deploymentService.CreateComposeConfiguration(server, composeDirectory).ComposeFilePath;
                 if (File.Exists(composePath))
                 {
-                    SetServerStatus(server, "Warning", "Stopped", probe.Message);
+                    SetServerStatus(server, ServerStatusKind.Warning, "Stopped", probe.Message);
                 }
                 else
                 {
-                    SetServerStatus(server, "Unknown", "Configured", "This local profile is saved but not currently responding on /v1/models.");
+                    SetServerStatus(server, ServerStatusKind.Unknown, "Configured", "This local profile is saved but not currently responding on /v1/models.");
                 }
             }
         }
@@ -454,13 +454,22 @@ internal sealed partial class ModelsController
     {
         if (probe.IsSuccess)
         {
-            SetServerStatus(server, "Ready", "Ready", probe.Message);
+            SetServerStatus(server, ServerStatusKind.Ready, "Ready", probe.Message);
+            if (server.UseExistingHttpServer && ReferenceEquals(server, SelectedServer))
+            {
+                PopulateServedModels(server, probe.ModelNames);
+            }
             return;
         }
 
+        if (server.UseExistingHttpServer && ReferenceEquals(server, SelectedServer))
+        {
+            ClearServedModels();
+        }
+
         var kind = probe.Status is VllmServerProbeStatus.EmptyEndpoint or VllmServerProbeStatus.InvalidEndpoint
-            ? "Warning"
-            : "Error";
+            ? ServerStatusKind.Warning
+            : ServerStatusKind.Error;
         var text = probe.Status is VllmServerProbeStatus.EmptyEndpoint or VllmServerProbeStatus.InvalidEndpoint
             ? invalidText
             : unreachableText;
