@@ -293,6 +293,7 @@ internal sealed partial class ChatController
                 systemPrompt: resolvedSystemPrompt,
                 maxTokens: ChatResponseMaxTokens,
                 requestOptions: requestOptions,
+                apiKey: selectedServer.ApiKey,
                 cancellationToken: linkedCancellation.Token);
 
             sendStopwatch.Stop();
@@ -445,7 +446,8 @@ internal sealed partial class ChatController
                 systemPrompt: "You generate short chat titles.",
                 maxTokens: 20,
                 temperature: 0.3,
-                requestOptions: titleRequestOptions);
+                requestOptions: titleRequestOptions,
+                apiKey: selectedServer.ApiKey);
 
             var generatedTitle = result.AssistantText.Trim().Trim('"', '\'').Trim();
             if (!string.IsNullOrWhiteSpace(generatedTitle) && generatedTitle.Length <= 80)

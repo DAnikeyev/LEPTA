@@ -50,6 +50,7 @@ internal sealed partial class ModelsController
         }
 
         server.AdditionalVllmArguments = config.AdditionalVllmArgumentsBox.Text.Trim();
+        server.ApiKey = config.ApiKeyBox.Text.Trim();
         if (int.TryParse(config.MaxNumSeqsBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxNumSeqs)) server.MaxNumSeqs = maxNumSeqs;
         server.EnableVerboseLogs = config.VerboseLogsCheckBox.IsChecked == true;
         ApplyAutomaticLocalModelFields(server);
@@ -119,6 +120,7 @@ internal sealed partial class ModelsController
             SetComboBoxValue(config.VCacheQuantizationBox, server.VCacheQuantization);
             SetComboBoxValue(config.TokenizersParallelismBox, server.EnableTokenizersParallelism ? "true" : "false");
             config.AdditionalVllmArgumentsBox.Text = GetAdditionalVllmArgumentsForEditing(server);
+            config.ApiKeyBox.Text = server.ApiKey;
             config.MaxNumSeqsBox.Text = server.MaxNumSeqs.ToString(CultureInfo.InvariantCulture);
             config.VerboseLogsCheckBox.IsChecked = server.EnableVerboseLogs;
         }
@@ -160,6 +162,7 @@ internal sealed partial class ModelsController
             config.VCacheQuantizationBox.SelectedIndex = -1;
             config.TokenizersParallelismBox.SelectedIndex = -1;
             config.AdditionalVllmArgumentsBox.Text = string.Empty;
+            config.ApiKeyBox.Text = string.Empty;
             config.MaxNumSeqsBox.Text = string.Empty;
             config.VerboseLogsCheckBox.IsChecked = false;
             deploy.EstimatedVramText.Text = string.Empty;
@@ -176,6 +179,7 @@ internal sealed partial class ModelsController
         }
 
         config.HttpServerRow.Visibility = Visibility.Collapsed;
+        config.ApiKeyRow.Visibility = Visibility.Collapsed;
         config.LocalFolderRow.Visibility = Visibility.Visible;
         config.ServedModelNameRow.Visibility = Visibility.Visible;
         config.LocalMetadataBorder.Visibility = Visibility.Visible;
@@ -183,6 +187,8 @@ internal sealed partial class ModelsController
         deploy.EstimateBorder.Visibility = Visibility.Visible;
         deploy.DockerStatusBorder.Visibility = Visibility.Visible;
         deploy.DeploymentLogBorder.Visibility = Visibility.Visible;
+        deploy.ModelActionsBorder.Visibility = Visibility.Collapsed;
+        deploy.CheckServerButton.Visibility = Visibility.Collapsed;
         deploy.OpenAdvancedConfigurationButton.Visibility = Visibility.Visible;
         deploy.OpenAdvancedConfigurationButton.IsEnabled = false;
     }
@@ -336,20 +342,21 @@ internal sealed partial class ModelsController
     {
         var isExternal = server.UseExistingHttpServer;
         config.ConfigurationTitleText.Text = isExternal ? "External server profile" : "Local deployment profile";
-        config.ModelFieldLabelText.Text = isExternal ? "Model name hint (optional)" : "Model / HF model ID";
+        config.ModelFieldLabelText.Text = isExternal ? "Model name" : "Model / HF model ID";
         config.ServedModelNameLabelText.Text = "Served model name";
         selection.ModelNoteText.Text = isExternal
             ? "External server profiles store an HTTP address plus optional request/model hints. LEPTA can verify them with /v1/models, but start and stop are managed outside the app."
             : VllmDefaults.VllmModelNote;
 
         config.HttpServerRow.Visibility = isExternal ? Visibility.Visible : Visibility.Collapsed;
+        config.ApiKeyRow.Visibility = isExternal ? Visibility.Visible : Visibility.Collapsed;
         config.LocalFolderRow.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         config.ServedModelNameRow.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         config.LocalMetadataBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         config.LocalRuntimeSettingsPanel.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         deploy.EstimateBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         deploy.DockerStatusBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
-        deploy.DeploymentLogBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
+        deploy.DeploymentLogBorder.Visibility = Visibility.Visible;
         deploy.OpenAdvancedConfigurationButton.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         deploy.OpenAdvancedConfigurationButton.IsEnabled = !IsBusy && !isExternal;
 
@@ -402,12 +409,15 @@ internal sealed partial class ModelsController
             && activeActionCanStopServer
             && ReferenceEquals(activeActionServer, server);
 
-        deploy.StartServerButton.Content = isExternal ? "Check server" : "Run server";
-        deploy.StartServerButton.ToolTip = isExternal
-            ? "Probe /v1/models on this external server profile."
-            : "Generate deployment assets and start the selected LEPTA-managed local server.";
-        deploy.StartServerButton.IsEnabled = hasServer && !isBusy;
-        deploy.StartServerButton.Visibility = hasServer ? Visibility.Visible : Visibility.Collapsed;
+        deploy.StartServerButton.Content = "Run server";
+        deploy.StartServerButton.ToolTip = "Generate deployment assets and start the selected LEPTA-managed local server.";
+        deploy.StartServerButton.IsEnabled = hasServer && !isBusy && !isExternal;
+        deploy.StartServerButton.Visibility = hasServer && !isExternal ? Visibility.Visible : Visibility.Collapsed;
+
+        deploy.CheckServerButton.Visibility = isExternal && hasServer && !isBusy ? Visibility.Visible : Visibility.Collapsed;
+        deploy.CheckServerButton.IsEnabled = isExternal && hasServer && !isBusy;
+
+        deploy.ModelActionsBorder.Visibility = hasServer && !isExternal ? Visibility.Visible : Visibility.Collapsed;
 
         deploy.StopServerButton.Content = canCancelLocalDeployment ? "Cancel deployment" : "Stop server";
         deploy.StopServerButton.ToolTip = isExternal
@@ -534,6 +544,7 @@ internal sealed partial class ModelsController
         config.VCacheQuantizationBox.IsEnabled = isEnabled;
         config.TokenizersParallelismBox.IsEnabled = isEnabled;
         config.AdditionalVllmArgumentsBox.IsEnabled = isEnabled;
+        config.ApiKeyBox.IsEnabled = isEnabled;
         config.MaxNumSeqsBox.IsEnabled = isEnabled;
         config.VerboseLogsCheckBox.IsEnabled = isEnabled;
         deploy.OpenAdvancedConfigurationButton.IsEnabled = isEnabled && SelectedServer?.UseExistingHttpServer != true;

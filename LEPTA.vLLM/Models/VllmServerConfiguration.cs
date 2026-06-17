@@ -37,6 +37,7 @@ public sealed record VllmServerConfiguration
     public int MaxNumSeqs { get; set; } = 5;
     public bool EnableTokenizersParallelism { get; set; } = true;
     public string AdditionalVllmArguments { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
     public bool EnablePrefixCaching { get; set; }
     public bool LanguageModelOnly { get; set; }
     public string? ReasoningParser { get; set; }

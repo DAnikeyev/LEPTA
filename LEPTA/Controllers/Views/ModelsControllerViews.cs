@@ -31,6 +31,8 @@ internal sealed class ModelsConfigurationViews
 
     public required FrameworkElement HttpServerRow { get; init; }
 
+    public required FrameworkElement ApiKeyRow { get; init; }
+
     public required TextBox HttpServerAddressBox { get; init; }
 
     public required TextBlock ModelFieldLabelText { get; init; }
@@ -81,6 +83,8 @@ internal sealed class ModelsConfigurationViews
 
     public required TextBox AdditionalVllmArgumentsBox { get; init; }
 
+    public required TextBox ApiKeyBox { get; init; }
+
     public required TextBox CpuOffloadBox { get; init; }
 
     public required TextBox MaxNumSeqsBox { get; init; }
@@ -100,6 +104,8 @@ internal sealed class ModelsDeploymentViews
 
     public required TextBlock EstimateSummaryText { get; init; }
 
+    public required Button CheckServerButton { get; init; }
+
     public required Button OpenAdvancedConfigurationButton { get; init; }
 
     public required FrameworkElement EstimateBorder { get; init; }
@@ -107,6 +113,8 @@ internal sealed class ModelsDeploymentViews
     public required FrameworkElement DockerStatusBorder { get; init; }
 
     public required FrameworkElement DeploymentLogBorder { get; init; }
+
+    public required FrameworkElement ModelActionsBorder { get; init; }
 
     public required Button StartServerButton { get; init; }
 

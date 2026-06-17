@@ -368,8 +368,9 @@ internal sealed partial class LeptaController
                 return;
             }
 
+            var prefillModel = ResolveRunModel(server, probe);
             if (string.Equals(lastClipboardPrefillServerId, server.Id, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(lastClipboardPrefillModelName, probe.FirstModelName, StringComparison.Ordinal)
+                && string.Equals(lastClipboardPrefillModelName, prefillModel, StringComparison.Ordinal)
                 && string.Equals(lastClipboardPrefillSharedPromptPrefix, sharedPromptPrefix, StringComparison.Ordinal))
             {
                 return;
@@ -378,20 +379,21 @@ internal sealed partial class LeptaController
             var cacheSalt = Guid.NewGuid().ToString("N");
             await requestOrchestrator.PrefillSharedPromptPrefixAsync(
                 probe.NormalizedEndpoint,
-                probe.FirstModelName,
+                prefillModel,
                 sharedPromptPrefix,
                 new VllmRequestOptions
                 {
                     CacheSalt = cacheSalt
                 },
                 LeptaRequestOrchestrator.ClipboardCachePrefillMaxTokens,
-                cancellationToken);
+                apiKey: server.ApiKey,
+                cancellationToken: cancellationToken);
 
             lastClipboardPrefillServerId = server.Id;
-            lastClipboardPrefillModelName = probe.FirstModelName;
+            lastClipboardPrefillModelName = prefillModel;
             lastClipboardPrefillSharedPromptPrefix = sharedPromptPrefix;
             lastClipboardPrefillCacheSalt = cacheSalt;
-            logger.Log(nameof(LeptaController), $"Clipboard cache prefill completed for server '{server.Name}' using model '{probe.FirstModelName}'. clipboardLength={clipboardText.Length}, prefixLength={sharedPromptPrefix.Length}.");
+            logger.Log(nameof(LeptaController), $"Clipboard cache prefill completed for server '{server.Name}' using model '{prefillModel}'. clipboardLength={clipboardText.Length}, prefixLength={sharedPromptPrefix.Length}.");
         }
         catch (OperationCanceledException)
         {
@@ -461,7 +463,7 @@ internal sealed partial class LeptaController
                 return;
             }
 
-            var model = probe.FirstModelName;
+            var model = ResolveRunModel(server, probe);
             lastResolvedModelName = model;
             ThroughputModelResolved?.Invoke(model);
             var sharedPromptPrefix = LeptaRequestOrchestrator.BuildSharedPromptPrefix(
@@ -524,6 +526,7 @@ internal sealed partial class LeptaController
                 temperature: currentTemperature,
                 sharedCacheSalt: clipboardPrefillCacheSalt,
                 sharedPrefixAlreadyWarm: !string.IsNullOrWhiteSpace(clipboardPrefillCacheSalt),
+                apiKey: server.ApiKey,
                 cancellationToken: linkedCts.Token);
 
             await CompletePanelResponseUpdatePumpAsync(updatePump);
@@ -722,6 +725,20 @@ internal sealed partial class LeptaController
         }
 
         return Math.Max(1, text.Trim().Length / 4);
+    }
+
+    private static string ResolveRunModel(VllmServerConfiguration server, VllmServerProbeResult probe)
+    {
+        // External hubs (e.g. OpenRouter) return thousands of models from /v1/models, and the first
+        // entry is an arbitrary — often paid — model (e.g. z-ai/glm-5.2). For external profiles,
+        // honor the model slug the user configured so a chosen free model is actually used. Local
+        // deployments keep using the served model name reported by the probe.
+        if (server.UseExistingHttpServer && !string.IsNullOrWhiteSpace(server.Model))
+        {
+            return server.Model.Trim();
+        }
+
+        return probe.FirstModelName;
     }
 
     private string? ResolveClipboardPrefillCacheSalt(string? serverId, string? model, string sharedPromptPrefix)

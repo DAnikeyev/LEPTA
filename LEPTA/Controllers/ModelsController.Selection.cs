@@ -5,12 +5,17 @@ namespace LEPTA.Controllers;
 
 internal sealed partial class ModelsController
 {
-    public void SelectServer(string? serverId)
+    public void SelectServer(string? serverId, bool forceReload = false)
     {
         var server = string.IsNullOrWhiteSpace(serverId)
             ? servers.FirstOrDefault()
             : servers.FirstOrDefault(item => string.Equals(item.Id, serverId, StringComparison.OrdinalIgnoreCase))
               ?? servers.FirstOrDefault();
+
+        if (!forceReload && ReferenceEquals(activeServer, server))
+        {
+            return;
+        }
 
         activeServer = server;
         SynchronizeSelectedServer(server);
@@ -24,6 +29,7 @@ internal sealed partial class ModelsController
         }
 
         UpdateActionButtons();
+        OnStateChanged();
     }
 
     public void HandleModelsSelectionChanged()
@@ -36,8 +42,7 @@ internal sealed partial class ModelsController
         if (selection.ModelsList.SelectedItem is VllmServerConfiguration server)
         {
             logger.Log(nameof(ModelsController), $"Model selection changed to '{server.Name}'. endpoint={server.Endpoint}.");
-            SelectServer(server.Id);
-            OnStateChanged();
+            SelectServer(server.Id, forceReload: true);
         }
     }
 
@@ -51,8 +56,7 @@ internal sealed partial class ModelsController
         if (selection.ChatServerCombo.SelectedItem is VllmServerConfiguration server)
         {
             logger.Log(nameof(ModelsController), $"Chat server selection changed to '{server.Name}'. endpoint={server.Endpoint}.");
-            SelectServer(server.Id);
-            OnStateChanged();
+            SelectServer(server.Id, forceReload: true);
         }
     }
 

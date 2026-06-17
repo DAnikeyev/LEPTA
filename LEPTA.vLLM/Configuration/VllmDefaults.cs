@@ -8,11 +8,15 @@ public static class VllmDefaults
     [
         new VllmServerConfiguration
         {
-            Name = "Localhost vLLM (8512)",
+            Name = "OpenRouter",
             UseExistingHttpServer = true,
-            HttpServerAddress = "http://localhost:8512",
-            HostPort = 8512,
-            EnableVerboseLogs = false
+            HttpServerAddress = "https://openrouter.ai/api",
+            Model = "openai/o3",
+            HostPort = 443,
+            ApiKey = "sk-or-v1-...",
+            EnableVerboseLogs = false,
+            UiStatusText = "Configure API key",
+            UiStatusDetails = "Replace the placeholder API key with your OpenRouter key."
         }
     ];
 

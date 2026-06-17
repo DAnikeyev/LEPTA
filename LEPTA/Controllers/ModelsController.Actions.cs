@@ -173,16 +173,18 @@ internal sealed partial class ModelsController
         await RefreshSelectedServerStatusAsync();
     }
 
-    public Task TestSelectedServerAsync()
+    public async Task TestSelectedServerAsync()
     {
         if (SelectedServer is null)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        logger.Log(nameof(ModelsController), $"Connectivity test requested for '{SelectedServer.Name}'.");
+        var server = SelectedServer;
+        var hasApiKey = !string.IsNullOrWhiteSpace(server.ApiKey) && server.ApiKey != "sk-or-v1-...";
+        logger.Log(nameof(ModelsController), $"Connectivity test requested for '{server.Name}'. endpoint={server.Endpoint}, hasApiKey={hasApiKey}.");
 
-        return TestAndRefreshSelectedServerAsync();
+        await TestAndRefreshSelectedServerAsync();
     }
 
     public async Task RefreshSelectedServerStatusAsync(CancellationToken cancellationToken = default)
@@ -386,19 +388,26 @@ internal sealed partial class ModelsController
             return;
         }
 
+        logger.Log(nameof(ModelsController), $"Starting connectivity check for server '{server.Name}'. endpoint={server.Endpoint}.");
+
         await ExecuteDeploymentActionAsync(server, "Checking /v1/models...", async (selectedServer, progress, cancellationToken) =>
         {
             var probe = await deploymentService.ProbeHttpServerAsync(selectedServer, cancellationToken);
             if (!probe.IsSuccess)
             {
+                logger.Log(nameof(ModelsController), $"Connectivity check FAILED for '{selectedServer.Name}'. status={probe.Status}, message={probe.Message}");
+                PublishAction($"Check server FAILED for '{selectedServer.Name}': {probe.Message}", ActionLogLevel.Error);
                 throw new InvalidOperationException(probe.Message);
             }
 
+            logger.Log(nameof(ModelsController), $"Connectivity check SUCCEEDED for '{selectedServer.Name}'. models=[{string.Join(", ", probe.ModelNames)}]");
             progress.Report(probe.Message);
-            progress.Report($"Verified served model: {probe.FirstModelName}");
+            progress.Report($"Verified served model(s): {string.Join(", ", probe.ModelNames)}");
+            PublishAction($"Check server SUCCEEDED for '{selectedServer.Name}'. Found {probe.ModelNames.Count} model(s): {string.Join(", ", probe.ModelNames)}.");
         });
 
         await RefreshSelectedServerStatusAsync();
+        logger.Log(nameof(ModelsController), $"Connectivity check completed for server '{server.Name}'.");
     }
 
     private async Task RefreshServerStatusAsync(VllmServerConfiguration server, CancellationToken cancellationToken)

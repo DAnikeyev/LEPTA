@@ -46,8 +46,8 @@ internal sealed partial class ModelsController
         actionLog = options.ActionLog ?? NullActionLogEventStream.Instance;
         deploymentService = options.DeploymentService ?? new VllmDeploymentService(logger: logger);
 
-        var seededServers = options.InitialServers?.ToList() ?? VllmDefaults.CreateServers().ToList();
-        if (seededServers.Count == 0)
+        var seededServers = options.InitialServers?.ToList();
+        if (seededServers is null || seededServers.Count == 0)
         {
             seededServers = VllmDefaults.CreateServers().ToList();
         }

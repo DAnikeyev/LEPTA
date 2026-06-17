@@ -31,6 +31,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         int maxTokens = 256,
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
+        string? apiKey = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -53,6 +54,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                 maxTokens,
                 temperature,
                 requestOptions,
+                apiKey,
                 cancellationToken);
 
             return CreateResult(
@@ -74,6 +76,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                     BuildPromptFallback(updatedConversation, systemPrompt),
                     maxTokens,
                     temperature,
+                    apiKey,
                     cancellationToken);
 
                 return CreateResult(
@@ -104,6 +107,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         int maxTokens = 256,
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
+        string? apiKey = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -132,6 +136,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                                    maxTokens,
                                    temperature,
                                    requestOptions,
+                                   apiKey,
                                    cancellationToken))
                 {
                     if (!string.IsNullOrEmpty(chunk.Text))
@@ -169,6 +174,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                     maxTokens,
                     temperature,
                     requestOptions,
+                    apiKey,
                     cancellationToken);
 
                 return CreateResult(
@@ -190,6 +196,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                     maxTokens,
                     temperature,
                     requestOptions,
+                    apiKey,
                     cancellationToken);
 
                 return CreateResult(
@@ -226,6 +233,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                     BuildPromptFallback(updatedConversation, systemPrompt),
                     maxTokens,
                     temperature,
+                    apiKey,
                     cancellationToken);
 
                 var fallbackText = NormalizeAssistantText(completion.Text);
@@ -276,6 +284,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         int maxTokens = 700,
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
+        string? apiKey = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -301,6 +310,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                                    maxTokens,
                                    temperature,
                                    requestOptions,
+                                   apiKey,
                                    cancellationToken))
                 {
                     if (!string.IsNullOrEmpty(chunk.Text))
@@ -323,6 +333,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                         BuildPromptFallback(conversation, systemPrompt),
                         maxTokens,
                         temperature,
+                        apiKey,
                         cancellationToken);
 
                     var fallbackText = NormalizeAssistantText(completion.Text);

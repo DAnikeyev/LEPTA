@@ -41,8 +41,9 @@ public sealed class VllmChatCompletionClient
         string model,
         string prompt,
         int maxTokens = 200,
+        string? apiKey = null,
         CancellationToken cancellationToken = default)
-        => CompleteAsync(endpoint, model, prompt, maxTokens, 0.0, cancellationToken);
+        => CompleteAsync(endpoint, model, prompt, maxTokens, 0.0, apiKey, cancellationToken);
 
     public async Task<CompletionResult> CompleteAsync(
         string endpoint,
@@ -50,6 +51,7 @@ public sealed class VllmChatCompletionClient
         string prompt,
         int maxTokens,
         double temperature,
+        string? apiKey = null,
         CancellationToken cancellationToken = default)
     {
         logger.Log(nameof(VllmChatCompletionClient), $"Preparing text completion request for model '{model}' at {endpoint.TrimEnd('/')}/v1/completions. promptLength={prompt.Length}, maxTokens={maxTokens}, temperature={temperature}.");
@@ -57,7 +59,7 @@ public sealed class VllmChatCompletionClient
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var (response, elapsed) = await PostAsync(endpoint, "/v1/completions", content, cancellationToken);
+        var (response, elapsed) = await PostAsync(endpoint, "/v1/completions", content, apiKey, cancellationToken);
 
         var result = await response.Content.ReadFromJsonAsync<CompletionResponse>(JsonOptions, cancellationToken)
             ?? throw new InvalidOperationException("Null response from vLLM.");
@@ -79,6 +81,7 @@ public sealed class VllmChatCompletionClient
         int maxTokens = 256,
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
+        string? apiKey = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -97,7 +100,7 @@ public sealed class VllmChatCompletionClient
 
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var (response, elapsed) = await PostAsync(endpoint, "/v1/chat/completions", content, cancellationToken);
+        var (response, elapsed) = await PostAsync(endpoint, "/v1/chat/completions", content, apiKey, cancellationToken);
 
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(responseBody);
@@ -118,6 +121,7 @@ public sealed class VllmChatCompletionClient
         int maxTokens = 700,
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
+        string? apiKey = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -141,6 +145,10 @@ public sealed class VllmChatCompletionClient
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        }
 
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -253,13 +261,23 @@ public sealed class VllmChatCompletionClient
         string endpoint,
         string relativePath,
         HttpContent content,
-        CancellationToken cancellationToken)
+        string? apiKey = null,
+        CancellationToken cancellationToken = default)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var normalizedEndpoint = endpoint.TrimEnd('/');
         var normalizedPath = relativePath.StartsWith('/') ? relativePath : $"/{relativePath}";
         logger.Log(nameof(VllmChatCompletionClient), $"POST {normalizedEndpoint}{normalizedPath}");
-        var response = await httpClient.PostAsync($"{normalizedEndpoint}{normalizedPath}", content, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{normalizedEndpoint}{normalizedPath}")
+        {
+            Content = content
+        };
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
+        var response = await httpClient.SendAsync(request, cancellationToken);
         sw.Stop();
 
         if (!response.IsSuccessStatusCode)

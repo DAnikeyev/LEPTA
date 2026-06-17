@@ -21,4 +21,8 @@
     <Using Include="NUnit.Framework" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="PersistenceStoreTests.Fixed.cs" />
+  </ItemGroup>
+
 </Project>

@@ -9,6 +9,15 @@ internal static class UserNotificationService
     private static readonly Dictionary<string, DateTimeOffset> RecentMessages = new(StringComparer.Ordinal);
     private static readonly TimeSpan DuplicateWindow = TimeSpan.FromSeconds(2);
 
+    public static void ShowInfo(
+        string title,
+        string message,
+        Window? owner = null,
+        ILeptaLogger? logger = null,
+        IActionLogEventStream? actionLog = null,
+        string source = "LEPTA")
+        => Show(MessageBoxImage.Information, title, message, owner, logger, actionLog, source, ActionLogLevel.Info);
+
     public static void ShowWarning(
         string title,
         string message,

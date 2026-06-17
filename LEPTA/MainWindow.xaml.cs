@@ -170,6 +170,7 @@ public partial class MainWindow : Window
                     NameBox = NameBox,
                     DeploymentModeBox = DeploymentModeBox,
                     HttpServerRow = HttpServerRow,
+                    ApiKeyRow = ApiKeyRow,
                     HttpServerAddressBox = HttpServerAddressBox,
                     ModelFieldLabelText = ModelFieldLabelText,
                     ModelBox = ModelBox,
@@ -195,6 +196,7 @@ public partial class MainWindow : Window
                     VCacheQuantizationBox = VCacheQuantizationBox,
                     TokenizersParallelismBox = TokenizersParallelismBox,
                     AdditionalVllmArgumentsBox = AdditionalVllmArgumentsBox,
+                    ApiKeyBox = ApiKeyBox,
                     CpuOffloadBox = CpuOffloadBox,
                     MaxNumSeqsBox = MaxNumSeqsBox,
                     VerboseLogsCheckBox = VerboseLogsCheckBox
@@ -206,10 +208,12 @@ public partial class MainWindow : Window
                     DockerStatusDetailsText = DockerStatusDetailsText,
                     EstimatedVramText = EstimatedVramText,
                     EstimateSummaryText = EstimateSummaryText,
+                    CheckServerButton = CheckServerButton,
                     OpenAdvancedConfigurationButton = OpenAdvancedConfigurationButton,
                     EstimateBorder = EstimateBorder,
                     DockerStatusBorder = DockerStatusBorder,
                     DeploymentLogBorder = DeploymentLogBorder,
+                    ModelActionsBorder = ModelActionsBorder,
                     StartServerButton = StartServerButton,
                     StopServerButton = StopServerButton,
                     RestartServerButton = RestartServerButton,
@@ -546,7 +550,7 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         }
     }
 
-    private async void ModelsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ModelsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (modelsController is null)
         {
@@ -554,7 +558,21 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         }
 
         modelsController.HandleModelsSelectionChanged();
-        await modelsController.RefreshSelectedServerStatusAsync();
+    }
+
+    private void ModelsList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (modelsController is null)
+        {
+            return;
+        }
+
+        if (e.OriginalSource is DependencyObject d
+            && FindAncestor<ListBoxItem>(d) is { } item
+            && item.Content is VllmServerConfiguration server)
+        {
+            modelsController.SelectServer(server.Id, forceReload: true);
+        }
     }
 
     private async void ChatServerCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -562,10 +580,10 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         if (modelsController is not null)
         {
             modelsController.HandleChatServerSelectionChanged();
-            await modelsController.RefreshSelectedServerStatusAsync();
         }
 
         chatController?.HandleServerSelectionChanged();
+        await (modelsController?.RefreshSelectedServerStatusAsync() ?? Task.CompletedTask);
     }
 
     private void ChatHistoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -679,6 +697,16 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         await modelsController.RestartSelectedServerAsync();
     }
 
+    private async void CheckServerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (modelsController is null)
+        {
+            return;
+        }
+
+        await modelsController.TestSelectedServerAsync();
+    }
+
     private void SaveModelButton_Click(object sender, RoutedEventArgs e)
     {
         if (modelsController is null)
@@ -688,11 +716,32 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
 
         modelsController.HandleConfigurationChanged();
         PersistState(showErrors: true);
+        if (modelsController.SelectedServer is { } server)
+        {
+            UserNotificationService.ShowInfo(
+                "Configuration saved",
+                $"Model profile '{server.Name}' has been saved.",
+                this,
+                logger,
+                actionLogStream,
+                nameof(MainWindow));
+        }
     }
 
     private void DeleteModelButton_Click(object sender, RoutedEventArgs e)
     {
+        var serverName = modelsController?.SelectedServer?.Name;
         modelsController?.DeleteSelectedModel();
+        if (!string.IsNullOrWhiteSpace(serverName))
+        {
+            UserNotificationService.ShowWarning(
+                "Model profile deleted",
+                $"Model profile '{serverName}' has been deleted.",
+                this,
+                logger,
+                actionLogStream,
+                nameof(MainWindow));
+        }
     }
 
     private void ThemeCheckBox_Changed(object sender, RoutedEventArgs e)

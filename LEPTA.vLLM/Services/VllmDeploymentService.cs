@@ -120,7 +120,7 @@ public sealed class VllmDeploymentService
     {
         if (configuration.UseExistingHttpServer)
         {
-            return serverProfileValidator.ValidateExternalEndpoint(configuration.HttpServerAddress, configuration.HostPort);
+            return serverProfileValidator.ValidateExternalEndpoint(configuration.HttpServerAddress);
         }
 
         return new VllmServerValidationResult(true, configuration.Endpoint, $"Using {configuration.Endpoint}.");
@@ -147,15 +147,23 @@ public sealed class VllmDeploymentService
         }
 
         var endpoint = validation.NormalizedEndpoint;
-        logger.Log(nameof(VllmDeploymentService), $"Checking model accessibility via GET {endpoint}/v1/models.");
+        var hasApiKey = !string.IsNullOrWhiteSpace(configuration.ApiKey)
+            && configuration.ApiKey != "sk-or-v1-...";
+        logger.Log(nameof(VllmDeploymentService), $"Checking model accessibility via GET {endpoint}/v1/models. hasApiKey={hasApiKey}.");
 
         try
         {
-            using var response = await httpClient.GetAsync($"{endpoint}/v1/models", cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{endpoint}/v1/models");
+            if (hasApiKey)
+            {
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", configuration.ApiKey);
+            }
+
+            using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 var message = $"The server at {endpoint} returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}) from /v1/models.";
-                logger.Log(nameof(VllmDeploymentService), $"Accessibility check failed with status {(int)response.StatusCode}.");
+                logger.Log(nameof(VllmDeploymentService), $"Accessibility check failed with status {(int)response.StatusCode}. reason={response.ReasonPhrase}");
                 return VllmServerProbeResult.Failure(VllmServerProbeStatus.HttpError, message, endpoint);
             }
 
@@ -174,8 +182,9 @@ public sealed class VllmDeploymentService
                 return VllmServerProbeResult.Failure(VllmServerProbeStatus.EmptyModelList, emptyMessage, endpoint);
             }
 
-            var successMessage = $"{endpoint} is reachable. Found {modelNames.Count} served model(s).";
-            logger.Log(nameof(VllmDeploymentService), $"Accessibility check completed. accessible=true, modelCount={modelNames.Count}.");
+            var modelList = string.Join(", ", modelNames);
+            var successMessage = $"{endpoint} /v1/models responded with HTTP 200. Found {modelNames.Count} served model(s): {modelList}.";
+            logger.Log(nameof(VllmDeploymentService), $"Accessibility check completed. accessible=true, modelCount={modelNames.Count}, models=[{modelList}].");
             return VllmServerProbeResult.Success(endpoint, modelNames, successMessage);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
