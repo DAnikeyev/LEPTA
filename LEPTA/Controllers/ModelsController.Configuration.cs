@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.IO;
-using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using LEPTA.Controllers.Models;
 using LEPTA.Theming;
 using LEPTA.vLLM.Configuration;
 using LEPTA.vLLM.Models;
@@ -20,41 +20,15 @@ internal sealed partial class ModelsController
             return;
         }
 
-        server.Name = config.NameBox.Text;
-        server.UseExistingHttpServer = IsExistingHttpServerSelected();
-        server.HttpServerAddress = config.HttpServerAddressBox.Text;
-        server.Model = config.ModelBox.Text;
-        server.ServedModelName = string.IsNullOrWhiteSpace(config.ServedModelNameBox.Text) ? null : config.ServedModelNameBox.Text.Trim();
-        server.DockerImage = string.IsNullOrWhiteSpace(config.DockerImageBox.Text)
-            ? string.Empty
-            : config.DockerImageBox.Text.Trim();
         var localModelPath = string.IsNullOrWhiteSpace(config.LocalPathBox.Text) ? null : config.LocalPathBox.Text.Trim();
         if (!string.Equals(server.LocalModelPath, localModelPath, StringComparison.OrdinalIgnoreCase))
         {
             server.LocalModelPath = localModelPath;
             ClearLocalModelMetadata(server);
         }
-        if (int.TryParse(config.PortBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port)) server.HostPort = port;
-        if (TryGetComboBoxValue(config.DTypeBox) is { } dtype) server.DType = dtype;
-        if (double.TryParse(config.GpuBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var gpu)) server.GpuMemoryUtilization = gpu;
-        if (double.TryParse(config.GpuVramBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var gpuVramGb)) server.GpuVramGb = gpuVramGb;
-        if (int.TryParse(config.MaxLenBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxLen)) server.MaxModelLength = maxLen;
-        if (int.TryParse(config.ReadyTimeoutBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var readyTimeoutMinutes)) server.ReadyTimeoutMinutes = readyTimeoutMinutes;
-        if (double.TryParse(config.CpuOffloadBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var cpuOffload)) server.CpuOffloadGb = cpuOffload;
-        if (TryGetComboBoxValue(config.WeightQuantizationBox) is { } weightQuantization) server.WeightQuantization = weightQuantization;
-        if (int.TryParse(config.TensorParallelBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tensorParallel)) server.TensorParallelSize = tensorParallel;
-        if (TryGetComboBoxValue(config.KCacheQuantizationBox) is { } kCacheQuantization) server.KCacheQuantization = kCacheQuantization;
-        if (TryGetComboBoxValue(config.VCacheQuantizationBox) is { } vCacheQuantization) server.VCacheQuantization = vCacheQuantization;
-        server.KvCacheDType = ResolveKvCacheDType(server.KCacheQuantization, server.VCacheQuantization, server.KvCacheDType);
-        if (TryGetComboBoxValue(config.TokenizersParallelismBox) is { } tokenizersParallelism)
-        {
-            server.EnableTokenizersParallelism = string.Equals(tokenizersParallelism, "true", StringComparison.OrdinalIgnoreCase);
-        }
 
-        server.AdditionalVllmArguments = config.AdditionalVllmArgumentsBox.Text.Trim();
+        ServerProfileFormMapper.Apply(server, BuildFormStateFromControls());
         ApplyRequestOverridesFromUi(server);
-        if (int.TryParse(config.MaxNumSeqsBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxNumSeqs)) server.MaxNumSeqs = maxNumSeqs;
-        server.EnableVerboseLogs = config.VerboseLogsCheckBox.IsChecked == true;
         ApplyAutomaticLocalModelFields(server);
         ResetServerStatus(server);
         selection.ModelsList.Items.Refresh();
@@ -66,6 +40,27 @@ internal sealed partial class ModelsController
         UpdateActionButtons();
         logger.Log(nameof(ModelsController), $"Configuration updated for '{server.Name}'. mode={(server.UseExistingHttpServer ? "ExistingHttpServer" : "LocalDeploy")}, endpoint={server.Endpoint}, model={server.Model}, verboseLogs={server.EnableVerboseLogs.ToString().ToLowerInvariant()}.");
         OnStateChanged();
+    }
+
+    /// <summary>
+    /// Quick-fill for the external auth/overrides editor: applies the OpenRouter-recommended endpoint
+    /// and <c>HTTP-Referer</c>/<c>X-Title</c> headers without touching the user's API key or model.
+    /// No-op unless an external-server profile is selected.
+    /// </summary>
+    public void ApplyOpenRouterPreset()
+    {
+        if (SelectedServer is not VllmServerConfiguration server || !server.UseExistingHttpServer)
+        {
+            return;
+        }
+
+        config.HttpServerAddressBox.Text = VllmDefaults.OpenRouterEndpoint;
+        config.AuthHeaderNameBox.Text = "Authorization";
+        config.AuthHeaderSchemeBox.Text = "Bearer";
+        config.ExtraHeadersBox.Text = ServerProfileFormMapper.FormatExtraHeaders(VllmDefaults.OpenRouterRecommendedHeaders);
+        config.ExtraBodyBox.Text = string.Empty;
+        HandleConfigurationChanged();
+        logger.Log(nameof(ModelsController), "Applied OpenRouter preset defaults (endpoint + recommended headers).");
     }
 
     public void HandleVerboseLogsChanged()
@@ -101,31 +96,11 @@ internal sealed partial class ModelsController
         isLoadingConfiguration = true;
         try
         {
-            config.NameBox.Text = server.Name;
+            WriteFormStateToControls(ServerProfileFormMapper.Build(server));
             SetDeploymentMode(server.UseExistingHttpServer);
-            config.HttpServerAddressBox.Text = server.HttpServerAddress;
-            config.ModelBox.Text = server.Model;
-            config.LocalPathBox.Text = server.LocalModelPath ?? string.Empty;
-            config.ServedModelNameBox.Text = server.ServedModelName ?? string.Empty;
-            config.DockerImageBox.Text = server.EffectiveDockerImage;
-            config.PortBox.Text = server.HostPort.ToString(CultureInfo.InvariantCulture);
-            SetComboBoxValue(config.DTypeBox, server.DType);
-            config.GpuBox.Text = server.GpuMemoryUtilization.ToString(CultureInfo.InvariantCulture);
-            config.GpuVramBox.Text = server.GpuVramGb > 0 ? server.GpuVramGb.ToString(CultureInfo.InvariantCulture) : string.Empty;
-            config.MaxLenBox.Text = server.MaxModelLength.ToString(CultureInfo.InvariantCulture);
-            config.ReadyTimeoutBox.Text = server.ReadyTimeoutMinutes.ToString(CultureInfo.InvariantCulture);
-            config.CpuOffloadBox.Text = server.CpuOffloadGb.ToString(CultureInfo.InvariantCulture);
-            config.ParameterCountText.Text = FormatParameterCount(server);
-            SetComboBoxValue(config.WeightQuantizationBox, server.WeightQuantization);
-            config.TensorParallelBox.Text = server.TensorParallelSize.ToString(CultureInfo.InvariantCulture);
-            SetComboBoxValue(config.KCacheQuantizationBox, server.KCacheQuantization);
-            SetComboBoxValue(config.VCacheQuantizationBox, server.VCacheQuantization);
-            SetComboBoxValue(config.TokenizersParallelismBox, server.EnableTokenizersParallelism ? "true" : "false");
-            config.AdditionalVllmArgumentsBox.Text = GetAdditionalVllmArgumentsForEditing(server);
+            config.ParameterCountText.Text = ServerProfileFormMapper.FormatParameterCount(server);
             LoadRequestOverridesIntoUi(server);
             ClearServedModels();
-            config.MaxNumSeqsBox.Text = server.MaxNumSeqs.ToString(CultureInfo.InvariantCulture);
-            config.VerboseLogsCheckBox.IsChecked = server.EnableVerboseLogs;
         }
         finally
         {
@@ -136,6 +111,67 @@ internal sealed partial class ModelsController
         UpdateEstimate(server);
         UpdateLocalModelMetadataDisplay(server);
         UpdateActionButtons();
+    }
+
+    /// <summary>Reads the editable controls into a WPF-free form state (the only control-coupled read path).</summary>
+    private ServerProfileFormState BuildFormStateFromControls()
+    {
+        var state = new ServerProfileFormState
+        {
+            Name = config.NameBox.Text,
+            UseExistingHttpServer = IsExistingHttpServerSelected(),
+            HttpServerAddress = config.HttpServerAddressBox.Text,
+            Model = config.ModelBox.Text,
+            ServedModelName = config.ServedModelNameBox.Text,
+            DockerImage = config.DockerImageBox.Text,
+            AdditionalVllmArguments = config.AdditionalVllmArgumentsBox.Text,
+            EnableVerboseLogs = config.VerboseLogsCheckBox.IsChecked == true,
+            DType = TryGetComboBoxValue(config.DTypeBox),
+            WeightQuantization = TryGetComboBoxValue(config.WeightQuantizationBox),
+            KCacheQuantization = TryGetComboBoxValue(config.KCacheQuantizationBox),
+            VCacheQuantization = TryGetComboBoxValue(config.VCacheQuantizationBox),
+        };
+
+        if (int.TryParse(config.PortBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port)) state.HostPort = port;
+        if (double.TryParse(config.GpuBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var gpu)) state.GpuMemoryUtilization = gpu;
+        if (double.TryParse(config.GpuVramBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var gpuVramGb)) state.GpuVramGb = gpuVramGb;
+        if (int.TryParse(config.MaxLenBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxLen)) state.MaxModelLength = maxLen;
+        if (int.TryParse(config.ReadyTimeoutBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var readyTimeoutMinutes)) state.ReadyTimeoutMinutes = readyTimeoutMinutes;
+        if (double.TryParse(config.CpuOffloadBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var cpuOffload)) state.CpuOffloadGb = cpuOffload;
+        if (int.TryParse(config.TensorParallelBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tensorParallel)) state.TensorParallelSize = tensorParallel;
+        if (int.TryParse(config.MaxNumSeqsBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxNumSeqs)) state.MaxNumSeqs = maxNumSeqs;
+        if (TryGetComboBoxValue(config.TokenizersParallelismBox) is { } tokenizersParallelism)
+        {
+            state.EnableTokenizersParallelism = string.Equals(tokenizersParallelism, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return state;
+    }
+
+    /// <summary>Pushes a WPF-free form state back into the editable controls (the only control-coupled write path).</summary>
+    private void WriteFormStateToControls(ServerProfileFormState state)
+    {
+        config.NameBox.Text = state.Name;
+        config.HttpServerAddressBox.Text = state.HttpServerAddress;
+        config.ModelBox.Text = state.Model;
+        config.LocalPathBox.Text = state.LocalModelPath ?? string.Empty;
+        config.ServedModelNameBox.Text = state.ServedModelName ?? string.Empty;
+        config.DockerImageBox.Text = state.DockerImage;
+        config.PortBox.Text = state.HostPort?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        SetComboBoxValue(config.DTypeBox, state.DType);
+        config.GpuBox.Text = state.GpuMemoryUtilization?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        config.GpuVramBox.Text = state.GpuVramGb is { } vram and > 0 ? vram.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        config.MaxLenBox.Text = state.MaxModelLength?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        config.ReadyTimeoutBox.Text = state.ReadyTimeoutMinutes?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        config.CpuOffloadBox.Text = state.CpuOffloadGb?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        SetComboBoxValue(config.WeightQuantizationBox, state.WeightQuantization);
+        config.TensorParallelBox.Text = state.TensorParallelSize?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        SetComboBoxValue(config.KCacheQuantizationBox, state.KCacheQuantization);
+        SetComboBoxValue(config.VCacheQuantizationBox, state.VCacheQuantization);
+        SetComboBoxValue(config.TokenizersParallelismBox, state.EnableTokenizersParallelism is { } tokenizers ? (tokenizers ? "true" : "false") : null);
+        config.AdditionalVllmArgumentsBox.Text = state.AdditionalVllmArguments;
+        config.MaxNumSeqsBox.Text = state.MaxNumSeqs?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        config.VerboseLogsCheckBox.IsChecked = state.EnableVerboseLogs;
     }
 
     private void ClearConfigurationInputs()
@@ -203,14 +239,14 @@ internal sealed partial class ModelsController
         {
             config.ParameterCountText.Text = string.IsNullOrWhiteSpace(server.Model)
                 ? "Unknown (external server)"
-                : FormatParameterCount(server);
+                : ServerProfileFormMapper.FormatParameterCount(server);
             deploy.EstimatedVramText.Text = "n/a";
             deploy.EstimateSummaryText.Text = "Already deployed HTTP server. Use Check server to verify /v1/models. Switch the source to Docker deployment when you want LEPTA to generate and manage a compose-based local server.";
             UpdateLocalModelMetadataDisplay(server);
             return;
         }
 
-        config.ParameterCountText.Text = FormatParameterCount(server);
+        config.ParameterCountText.Text = ServerProfileFormMapper.FormatParameterCount(server);
         var estimate = VllmMemoryEstimator.Estimate(server);
         deploy.EstimatedVramText.Text = $"{estimate.EstimatedVramGb:F1} GB";
         deploy.EstimateSummaryText.Text = estimate.Summary;
@@ -365,7 +401,10 @@ internal sealed partial class ModelsController
         config.LocalRuntimeSettingsPanel.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         deploy.EstimateBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         deploy.DockerStatusBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
-        deploy.DeploymentLogBorder.Visibility = Visibility.Visible;
+        // The Server log panel (+ verbose-vLLM toggle) is Docker-deployment chrome.
+        // External-server profiles get a focused endpoint/model/auth/test flow instead,
+        // with probe results surfaced through the served-model picker and profile status.
+        deploy.DeploymentLogBorder.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         deploy.OpenAdvancedConfigurationButton.Visibility = isExternal ? Visibility.Collapsed : Visibility.Visible;
         deploy.OpenAdvancedConfigurationButton.IsEnabled = !IsBusy && !isExternal;
 
@@ -401,9 +440,9 @@ internal sealed partial class ModelsController
 
     private void SetServerStatus(VllmServerConfiguration server, ServerStatusKind kind, string text, string details)
     {
-        server.UiStatusKind = kind;
-        server.UiStatusText = text;
-        server.UiStatusDetails = details;
+        server.Runtime.StatusKind = kind;
+        server.Runtime.StatusText = text;
+        server.Runtime.StatusDetails = details;
     }
 
     private void UpdateActionButtons()
@@ -482,7 +521,7 @@ internal sealed partial class ModelsController
         config.DeploymentModeBox.SelectedIndex = -1;
     }
 
-    private static void SetComboBoxValue(ComboBox comboBox, string value)
+    private static void SetComboBoxValue(ComboBox comboBox, string? value)
     {
         foreach (var item in comboBox.Items)
         {
@@ -495,30 +534,6 @@ internal sealed partial class ModelsController
         }
 
         comboBox.SelectedIndex = -1;
-    }
-
-    private static string FormatParameterCount(VllmServerConfiguration server)
-    {
-        var resolved = VllmMemoryEstimator.ResolveParameterCountBillions(server);
-        var source = server.ParameterCountBillions > 0
-            ? "model metadata"
-            : "derived from model ID/name";
-        return $"{resolved.ToString("0.###", CultureInfo.InvariantCulture)} B ({source})";
-    }
-
-    private static string GetAdditionalVllmArgumentsForEditing(VllmServerConfiguration server)
-    {
-        if (!string.IsNullOrWhiteSpace(server.AdditionalVllmArguments))
-        {
-            return server.AdditionalVllmArguments;
-        }
-
-        return VllmServerConfiguration.ResolveSuggestedAdditionalVllmArguments(
-            server.Name,
-            server.Model,
-            server.LocalModelPath,
-            server.DetectedArchitecture,
-            server.ReasoningParser);
     }
 
     private static bool IsVerboseLogMessage(string message)
@@ -561,21 +576,10 @@ internal sealed partial class ModelsController
         config.AuthHeaderSchemeBox.IsEnabled = isEnabled;
         config.ExtraHeadersBox.IsEnabled = isEnabled;
         config.ExtraBodyBox.IsEnabled = isEnabled;
+        config.OpenRouterPresetButton.IsEnabled = isEnabled;
         config.MaxNumSeqsBox.IsEnabled = isEnabled;
         config.VerboseLogsCheckBox.IsEnabled = isEnabled;
         deploy.OpenAdvancedConfigurationButton.IsEnabled = isEnabled && SelectedServer?.UseExistingHttpServer != true;
-    }
-
-    private static string ResolveKvCacheDType(string? kCache, string? vCache, string fallback)
-    {
-        if (!string.IsNullOrWhiteSpace(kCache)
-            && string.Equals(kCache, vCache, StringComparison.OrdinalIgnoreCase)
-            && kCache is "fp8" or "fp16" or "bf16")
-        {
-            return kCache;
-        }
-
-        return fallback;
     }
 
     private string GetCurrentApiKey()
@@ -634,9 +638,9 @@ internal sealed partial class ModelsController
         overrides.AuthHeaderScheme = string.IsNullOrWhiteSpace(config.AuthHeaderSchemeBox.Text)
             ? "Bearer"
             : config.AuthHeaderSchemeBox.Text.Trim();
-        overrides.Headers = ParseExtraHeaders(config.ExtraHeadersBox.Text);
+        overrides.Headers = ServerProfileFormMapper.ParseExtraHeaders(config.ExtraHeadersBox.Text);
 
-        var extraBodyError = TryParseExtraBody(config.ExtraBodyBox.Text, out var extraBody);
+        var extraBodyError = ServerProfileFormMapper.TryParseExtraBody(config.ExtraBodyBox.Text, out var extraBody);
         if (extraBodyError is null)
         {
             overrides.ExtraBody = extraBody ?? new Dictionary<string, JsonElement>();
@@ -664,8 +668,8 @@ internal sealed partial class ModelsController
         config.ApiKeyBox.Visibility = Visibility.Visible;
         config.AuthHeaderNameBox.Text = string.IsNullOrWhiteSpace(overrides.AuthHeaderName) ? "Authorization" : overrides.AuthHeaderName;
         config.AuthHeaderSchemeBox.Text = string.IsNullOrWhiteSpace(overrides.AuthHeaderScheme) ? "Bearer" : overrides.AuthHeaderScheme;
-        config.ExtraHeadersBox.Text = FormatExtraHeaders(overrides.Headers);
-        config.ExtraBodyBox.Text = FormatExtraBody(overrides.ExtraBody);
+        config.ExtraHeadersBox.Text = ServerProfileFormMapper.FormatExtraHeaders(overrides.Headers);
+        config.ExtraBodyBox.Text = ServerProfileFormMapper.FormatExtraBody(overrides.ExtraBody);
         config.RequestOverridesErrorText.Visibility = Visibility.Collapsed;
         config.RequestOverridesErrorText.Text = string.Empty;
     }
@@ -760,102 +764,4 @@ internal sealed partial class ModelsController
             isPopulatingServedModels = false;
         }
     }
-
-    private static Dictionary<string, string> ParseExtraHeaders(string text)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return result;
-        }
-
-        foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            var line = rawLine.Trim();
-            if (line.Length == 0)
-            {
-                continue;
-            }
-
-            var separator = line.IndexOf(':', StringComparison.Ordinal);
-            if (separator <= 0)
-            {
-                continue;
-            }
-
-            var name = line[..separator].Trim();
-            var value = line[(separator + 1)..].Trim();
-            if (name.Length > 0)
-            {
-                result[name] = value;
-            }
-        }
-
-        return result;
-    }
-
-    private static string FormatExtraHeaders(IReadOnlyDictionary<string, string> headers)
-    {
-        if (headers is null || headers.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        return string.Join(Environment.NewLine, headers.Select(pair => $"{pair.Key}: {pair.Value}"));
-    }
-
-    private static string? TryParseExtraBody(string text, out Dictionary<string, JsonElement>? extraBody)
-    {
-        extraBody = null;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(text);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return "Extra body must be a JSON object (e.g. {\"user\":\"id\"}).";
-            }
-
-            var result = new Dictionary<string, JsonElement>();
-            foreach (var property in document.RootElement.EnumerateObject())
-            {
-                result[property.Name] = property.Value.Clone();
-            }
-
-            extraBody = result;
-            return null;
-        }
-        catch (JsonException exception)
-        {
-            return $"Extra body is not valid JSON: {exception.Message}";
-        }
-    }
-
-    private static string FormatExtraBody(IReadOnlyDictionary<string, JsonElement> extraBody)
-    {
-        if (extraBody is null || extraBody.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
-        {
-            writer.WriteStartObject();
-            foreach (var pair in extraBody)
-            {
-                writer.WritePropertyName(pair.Key);
-                pair.Value.WriteTo(writer);
-            }
-            writer.WriteEndObject();
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
 }
-
-

@@ -119,4 +119,19 @@ public static class VllmServerCalculations
 
     public static int ResolveMaxDocumentTokens(int maxModelLength)
         => Math.Max(512, maxModelLength * 3 / 4);
+
+    /// <summary>
+    /// Short UI label classifying the profile: "External server" vs. "LEPTA-managed local".
+    /// </summary>
+    public static string ResolveUiTypeLabel(bool useExistingHttpServer)
+        => useExistingHttpServer ? "External server" : "LEPTA-managed local";
+
+    /// <summary>
+    /// Human-readable endpoint label. For external servers, the normalized address; for local
+    /// deployments, a hint that it runs on localhost at the configured host port.
+    /// </summary>
+    public static string ResolveUiEndpointLabel(bool useExistingHttpServer, string? httpServerAddress, int hostPort)
+        => useExistingHttpServer
+            ? NormalizeHttpServerAddress(httpServerAddress, hostPort)
+            : $"Runs at http://localhost:{hostPort}";
 }

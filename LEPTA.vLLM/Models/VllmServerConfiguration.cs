@@ -65,12 +65,14 @@ public sealed record VllmServerConfiguration
     public int? DetectedHiddenSize { get; set; }
     public int? DetectedLayerCount { get; set; }
     public IReadOnlyList<string> AvailableWeightQuantizations { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Transient UI/runtime status (probe result, status dot/pill text, details). Never serialized;
+    /// the only bridge from the persisted record to live UI state. See <see cref="VllmServerRuntimeState"/>.
+    /// </summary>
     [JsonIgnore]
-    public ServerStatusKind UiStatusKind { get; set; } = ServerStatusKind.Unknown;
-    [JsonIgnore]
-    public string UiStatusText { get; set; } = "Not checked";
-    [JsonIgnore]
-    public string UiStatusDetails { get; set; } = "Select the profile or use Check server to verify it.";
+    public VllmServerRuntimeState Runtime { get; init; } = new();
+
     public bool SupportsLifecycleManagement => !UseExistingHttpServer;
 
     public int MaxOutputTokens => VllmServerCalculations.ResolveMaxOutputTokens(MaxModelLength);
@@ -79,9 +81,9 @@ public sealed record VllmServerConfiguration
     [JsonIgnore]
     public bool IsLeptaManagedDeploymentActive => SupportsLifecycleManagement && HasEstablishedConnection;
     [JsonIgnore]
-    public string UiTypeLabel => UseExistingHttpServer ? "External server" : "LEPTA-managed local";
+    public string UiTypeLabel => VllmServerCalculations.ResolveUiTypeLabel(UseExistingHttpServer);
     [JsonIgnore]
-    public bool HasEstablishedConnection => UiStatusKind == ServerStatusKind.Ready;
+    public bool HasEstablishedConnection => Runtime.StatusKind == ServerStatusKind.Ready;
     public bool SupportsThinking
         => !string.IsNullOrWhiteSpace(ReasoningParser)
            || VllmServerCalculations.LooksLikeThinkingModel(ServedModelName)
@@ -99,9 +101,7 @@ public sealed record VllmServerConfiguration
         ? ServedModelName.Trim()
         : $"{VllmServerCalculations.ResolveModelLabel(Name, Model, LocalModelPath)}-local";
     [JsonIgnore]
-    public string UiEndpointLabel => UseExistingHttpServer
-        ? VllmServerCalculations.NormalizeHttpServerAddress(HttpServerAddress, HostPort)
-        : $"Runs at http://localhost:{HostPort}";
+    public string UiEndpointLabel => VllmServerCalculations.ResolveUiEndpointLabel(UseExistingHttpServer, HttpServerAddress, HostPort);
 
     public static string ResolveSuggestedAdditionalVllmArguments(
         string? displayName,

@@ -15,6 +15,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using LEPTA.Controllers;
 using LEPTA.Controllers.Views;
+using LEPTA.Controls;
 using LEPTA.Models;
 using LEPTA.Services;
 using LEPTA.Shared.Diagnostics;
@@ -161,7 +162,7 @@ public partial class MainWindow : Window
                 Selection = new ModelsSelectionViews
                 {
                     ModelsList = ModelsList,
-                    ChatServerCombo = ChatServerCombo,
+                    ChatServerCombo = ChatViewControl.ServerCombo,
                     ModelNoteText = ModelNoteText
                 },
                 Configuration = new ModelsConfigurationViews
@@ -207,6 +208,7 @@ public partial class MainWindow : Window
                     ExtraHeadersBox = ExtraHeadersBox,
                     ExtraBodyBox = ExtraBodyBox,
                     RequestOverridesErrorText = RequestOverridesErrorText,
+                    OpenRouterPresetButton = OpenRouterPresetButton,
                     CpuOffloadBox = CpuOffloadBox,
                     MaxNumSeqsBox = MaxNumSeqsBox,
                     VerboseLogsCheckBox = VerboseLogsCheckBox
@@ -229,7 +231,7 @@ public partial class MainWindow : Window
                     RestartServerButton = RestartServerButton,
                     DeploymentLogBox = DeploymentLogBox,
                     ModelProgress = ModelProgress,
-                    ChatProgress = ChatProgress,
+                    ChatProgress = ChatViewControl.Progress,
                     AdvancedConfigurationPanel = AdvancedConfigurationPanel
                 }
             },
@@ -244,36 +246,7 @@ public partial class MainWindow : Window
             });
         themeController = new ThemeController();
         chatController = new ChatController(
-            new ChatControllerViews
-            {
-                Messages = new ChatMessagesViews
-                {
-                    MessagesPanel = MessagesPanel,
-                    EmptyState = ChatEmptyStateBorder,
-                    ScrollViewer = MessagesScrollViewer
-                },
-                Input = new ChatInputViews
-                {
-                    InputBox = ChatInputBox,
-                    NewChatButton = NewChatButton,
-                    SendButton = SendButton,
-                    StopButton = StopChatButton
-                },
-                Settings = new ChatSettingsViews
-                {
-                    ThinkingCheckBox = ChatThinkingCheckBox
-                },
-                Chrome = new ChatChromeViews
-                {
-                    ServerCombo = ChatServerCombo,
-                    StatusText = ChatStatusText,
-                    ProgressBar = ChatProgress
-                },
-                History = new ChatHistoryViews
-                {
-                    HistoryList = ChatHistoryList
-                }
-            },
+            ChatViewControl.BuildViews(),
             deploymentService,
             conversationService,
             new JsonFileStore(),
@@ -283,6 +256,8 @@ public partial class MainWindow : Window
                 Logger = logger,
                 ActionLog = actionLogStream
             });
+        ChatViewControl.Controller = chatController;
+        ChatViewControl.ServerCombo.SelectionChanged += ChatServerCombo_SelectionChanged;
         leptaController = new LeptaController(
             new LeptaControllerViews
             {
@@ -411,7 +386,7 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         LeptaView.Visibility = LeptaTabButton.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         ModelsView.Visibility = ModelsTabButton.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         SettingsView.Visibility = SettingsTabButton.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        ChatView.Visibility = ChatTabButton.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        ChatViewControl.Visibility = ChatTabButton.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ToggleNavigationButton_Click(object sender, RoutedEventArgs e)
@@ -596,23 +571,6 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         await (modelsController?.RefreshSelectedServerStatusAsync() ?? Task.CompletedTask);
     }
 
-    private void ChatHistoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (e.AddedItems.Count > 0 && e.AddedItems[0] is ChatHistoryEntry entry)
-        {
-            chatController?.LoadHistoryEntry(entry);
-        }
-    }
-
-    private void DeleteHistoryEntry_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { DataContext: ChatHistoryEntry entry })
-        {
-            chatController?.DeleteHistoryEntry(entry);
-            e.Handled = true;
-        }
-    }
-
     private void LeptaServerCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (LeptaServerCombo.SelectedItem is VllmServerConfiguration server)
@@ -729,6 +687,9 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         await modelsController.TestSelectedServerAsync();
     }
 
+    private void OpenRouterPresetButton_Click(object sender, RoutedEventArgs e)
+        => modelsController?.ApplyOpenRouterPreset();
+
     private void SaveModelButton_Click(object sender, RoutedEventArgs e)
     {
         if (modelsController is null)
@@ -826,36 +787,6 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
 
     private void CloseAdvancedConfigurationButton_Click(object sender, RoutedEventArgs e)
         => CloseOverlay(AdvancedConfigurationPanel);
-
-    private void NewChatButton_Click(object sender, RoutedEventArgs e) => chatController?.StartNewChat();
-
-    private void StopChatButton_Click(object sender, RoutedEventArgs e) => chatController?.CancelCurrentMessage();
-
-    private async void SendButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (chatController is null)
-        {
-            return;
-        }
-
-        await chatController.SendCurrentMessageAsync();
-    }
-
-    private async void ChatInputBox_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None)
-        {
-            return;
-        }
-
-        e.Handled = true;
-        if (chatController is null)
-        {
-            return;
-        }
-
-        await chatController.SendCurrentMessageAsync();
-    }
 
     private void AddLeptaPanelButton_Click(object sender, RoutedEventArgs e) => leptaController?.AddPanel();
 
@@ -3407,7 +3338,7 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
                 _ = Dispatcher.InvokeAsync(async () => await leptaController!.RunFromClipboardAsync());
                 e.Handled = true;
                 break;
-            case Key.N when Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && ChatView.Visibility == Visibility.Visible:
+            case Key.N when Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && ChatViewControl.Visibility == Visibility.Visible:
                 chatController?.StartNewChat();
                 e.Handled = true;
                 break;

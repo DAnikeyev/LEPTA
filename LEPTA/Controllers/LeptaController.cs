@@ -178,6 +178,10 @@ internal sealed partial class LeptaController
         clipboardPrefillLock.Release();
     }
 
+    /// <summary>
+    /// Cancels the active clipboard run without starting a new one (the Stop button).
+    /// Compare <see cref="RunFromClipboardAsync"/>, which cancels-then-runs when re-invoked mid-flight.
+    /// </summary>
     public void CancelCurrentRun()
     {
         if (!isBusy || currentRunCts is null || currentRunCts.IsCancellationRequested)
@@ -294,6 +298,14 @@ internal sealed partial class LeptaController
         SetStatusMessage($"Ready to run panels from clipboard through {server.Endpoint}. LEPTA will resolve the served model from /v1/models before sending requests.");
     }
 
+    /// <summary>
+    /// Runs every panel against the clipboard contents. Concurrency policy is explicit
+    /// <strong>cancel-then-run</strong>: if a run is already in flight (the <see cref="runLock"/>
+    /// is held — typically because the global hotkey fired again, since the Run button is
+    /// disabled while busy), the active run is cancelled and we wait for it to wind down before
+    /// starting the new one. A user-visible status message announces the hand-off. Use
+    /// <see cref="CancelCurrentRun"/> (the Stop button) to cancel without starting a new run.
+    /// </summary>
     public async Task RunFromClipboardAsync(CancellationToken cancellationToken = default)
     {
         if (!await runLock.WaitAsync(0, cancellationToken))

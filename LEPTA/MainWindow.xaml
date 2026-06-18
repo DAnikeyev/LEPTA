@@ -187,16 +187,16 @@
                         <Style TargetType="Border">
                             <Setter Property="Background" Value="{DynamicResource SecondaryTextBrush}" />
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Ready">
+                                <DataTrigger Binding="{Binding Runtime.StatusKind}" Value="Ready">
                                     <Setter Property="Background" Value="{DynamicResource SuccessBrush}" />
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Busy">
+                                <DataTrigger Binding="{Binding Runtime.StatusKind}" Value="Busy">
                                     <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Warning">
+                                <DataTrigger Binding="{Binding Runtime.StatusKind}" Value="Warning">
                                     <Setter Property="Background" Value="{DynamicResource WarningBrush}" />
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding UiStatusKind}" Value="Error">
+                                <DataTrigger Binding="{Binding Runtime.StatusKind}" Value="Error">
                                     <Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
                                 </DataTrigger>
                             </Style.Triggers>
@@ -214,7 +214,7 @@
                         BorderBrush="{DynamicResource BorderBrushTheme}"
                         BorderThickness="1"
                         CornerRadius="8">
-                    <TextBlock Text="{Binding UiStatusText}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                    <TextBlock Text="{Binding Runtime.StatusText}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
                 </Border>
                 <TextBlock Grid.Column="1"
                            Grid.Row="1"
@@ -825,6 +825,9 @@
                                                 <TextBox x:Name="ExtraBodyBox" AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto" Margin="0,0,0,4"
                                                          TextChanged="ConfigurationBox_TextChanged" />
                                                 <TextBlock x:Name="RequestOverridesErrorText" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                                <Button x:Name="OpenRouterPresetButton" Content="Apply OpenRouter defaults" Margin="0,4,0,0" HorizontalAlignment="Left"
+                                                        Style="{StaticResource SecondaryButtonStyle}" Click="OpenRouterPresetButton_Click"
+                                                        ToolTip="Fill the endpoint and the HTTP-Referer / X-Title headers OpenRouter recommends. Your API key and model are kept." />
                                             </StackPanel>
                                             <TextBlock Text="Authentication" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Top" Margin="0,4,0,0" />
                                         </Grid>
@@ -1178,163 +1181,7 @@
                 </ScrollViewer>
             </Grid>
 
-            <Grid x:Name="ChatView" Visibility="Collapsed">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition x:Name="ChatHistoryColumn" Width="280" />
-                </Grid.ColumnDefinitions>
-
-                <Border Style="{StaticResource CardBorderStyle}" Padding="12">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <Border Background="{DynamicResource PanelBackgroundAltBrush}" CornerRadius="10" Padding="12" Margin="0,0,0,12">
-                            <DockPanel LastChildFill="True">
-                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <ComboBox x:Name="ChatServerCombo"
-                                              Width="320"
-                                              Height="34"
-                                              DisplayMemberPath="Name"
-                                              SelectionChanged="ChatServerCombo_SelectionChanged" />
-                                    <CheckBox x:Name="ChatThinkingCheckBox"
-                                              Content="Thinking"
-                                              Margin="12,0,0,0"
-                                              VerticalAlignment="Center" />
-                                    <Button x:Name="NewChatButton"
-                                            Content="New chat"
-                                            Height="34"
-                                            Padding="14,0"
-                                            Margin="12,0,0,0"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            Click="NewChatButton_Click" />
-                                    <Button x:Name="StopChatButton"
-                                            Content="Stop"
-                                            Height="34"
-                                            Padding="14,0"
-                                            Margin="8,0,0,0"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            Click="StopChatButton_Click" />
-                                </StackPanel>
-                                <TextBlock x:Name="ChatStatusText"
-                                           Foreground="{DynamicResource SecondaryTextBrush}"
-                                           TextWrapping="NoWrap"
-                                           TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                                           VerticalAlignment="Center"
-                                           Margin="12,0,0,0" />
-                            </DockPanel>
-                        </Border>
-
-                        <Border Grid.Row="1" Background="{DynamicResource PanelBackgroundAltBrush}" BorderBrush="{DynamicResource BorderBrushTheme}" BorderThickness="1" CornerRadius="10" Padding="12">
-                            <Grid>
-                                <ScrollViewer x:Name="MessagesScrollViewer" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="MessagesPanel" />
-                                </ScrollViewer>
-                                <Border x:Name="ChatEmptyStateBorder"
-                                        Background="{DynamicResource PanelBackgroundAltBrush}"
-                                        BorderBrush="{DynamicResource BorderBrushTheme}"
-                                        BorderThickness="1"
-                                        CornerRadius="10"
-                                        Padding="18"
-                                        Margin="2"
-                                        IsHitTestVisible="False">
-                                    <StackPanel>
-                                        <TextBlock Text="Chat is ready" FontSize="18" FontWeight="SemiBold" />
-                                        <TextBlock Margin="0,8,0,0"
-                                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                                   TextWrapping="Wrap"
-                                                   Text="Select a verified server and send a prompt to start." />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </Border>
-
-                        <Grid Grid.Row="2" Margin="0,12,0,0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="110" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ChatInputBox" MinHeight="44" TextWrapping="Wrap" AcceptsReturn="True" PreviewKeyDown="ChatInputBox_PreviewKeyDown" />
-                            <Button x:Name="SendButton" Grid.Column="1" Content="Send" Margin="10,4,0,0" Click="SendButton_Click" />
-                            <TextBlock Grid.Row="1"
-                                       Grid.ColumnSpan="2"
-                                       Margin="0,10,0,0"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Text="Enter sends; Shift+Enter adds a newline." />
-                        </Grid>
-
-                        <ProgressBar x:Name="ChatProgress" Height="4" VerticalAlignment="Top" IsIndeterminate="False" />
-                    </Grid>
-                </Border>
-
-                <Border Grid.Column="1"
-                        Margin="12,0,0,0"
-                        Style="{StaticResource CardBorderStyle}"
-                        Padding="12">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Text="History" FontSize="18" FontWeight="SemiBold" Margin="0,2,0,12" />
-                        <ListBox x:Name="ChatHistoryList"
-                                 Grid.Row="1"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 AllowDrop="False"
-                                 SelectionChanged="ChatHistoryList_SelectionChanged">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="6,6,6,6" Margin="0,0,0,4">
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Row="0" Grid.Column="0"
-                                                       Text="{Binding Title}"
-                                                       FontSize="14"
-                                                       FontWeight="SemiBold"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       TextWrapping="NoWrap"
-                                                       VerticalAlignment="Center" />
-                                            <Button Grid.Row="0" Grid.Column="1"
-                                                    Content="✕"
-                                                    Width="24" Height="24"
-                                                    Padding="0"
-                                                    FontSize="12"
-                                                    VerticalAlignment="Center"
-                                                    Margin="6,0,0,0"
-                                                    Style="{StaticResource SecondaryButtonStyle}"
-                                                    Click="DeleteHistoryEntry_Click"
-                                                    ToolTip="Delete this chat" />
-                                            <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
-                                                       Text="{Binding CreatedAt, StringFormat={}{0:MMM dd, HH:mm}}"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Margin="0,2,0,0" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </Grid>
-                </Border>
-            </Grid>
+            <controls:ChatView x:Name="ChatViewControl" Visibility="Collapsed" />
         </Grid>
 
         <Border x:Name="ActionLogOverlayRoot"

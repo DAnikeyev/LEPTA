@@ -105,4 +105,27 @@ public sealed class VllmServerCalculationsTests
         Assert.That(VllmServerCalculations.ResolveMaxContextTokens(100), Is.EqualTo(512));
         Assert.That(VllmServerCalculations.ResolveMaxDocumentTokens(100), Is.EqualTo(512));
     }
+
+    [Test]
+    public void ResolveUiTypeLabel_ClassifiesExternalVsLocal()
+    {
+        Assert.That(VllmServerCalculations.ResolveUiTypeLabel(true), Is.EqualTo("External server"));
+        Assert.That(VllmServerCalculations.ResolveUiTypeLabel(false), Is.EqualTo("LEPTA-managed local"));
+    }
+
+    [Test]
+    public void ResolveUiEndpointLabel_NormalizesExternalAddress()
+    {
+        Assert.That(
+            VllmServerCalculations.ResolveUiEndpointLabel(true, "https://openrouter.ai/api/", 443),
+            Is.EqualTo("https://openrouter.ai/api"));
+    }
+
+    [Test]
+    public void ResolveUiEndpointLabel_ShowsLocalhostForManagedDeployment()
+    {
+        Assert.That(
+            VllmServerCalculations.ResolveUiEndpointLabel(false, "http://localhost:8512", 8512),
+            Is.EqualTo("Runs at http://localhost:8512"));
+    }
 }

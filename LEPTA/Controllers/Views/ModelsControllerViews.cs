@@ -105,6 +105,8 @@ internal sealed class ModelsConfigurationViews
 
     public required TextBlock RequestOverridesErrorText { get; init; }
 
+    public required Button OpenRouterPresetButton { get; init; }
+
     public required TextBox CpuOffloadBox { get; init; }
 
     public required TextBox MaxNumSeqsBox { get; init; }
