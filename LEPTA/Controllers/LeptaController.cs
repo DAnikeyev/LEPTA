@@ -90,15 +90,7 @@ internal sealed partial class LeptaController
             UpdateCurrentDashboardReferenceName();
             OnStateChanged();
         };
-        run.ServerCombo.SelectionChanged += (_, _) =>
-        {
-            if (!suppressStateChanged && run.ServerCombo.SelectedItem is VllmServerConfiguration server)
-            {
-                preferredServerId = server.Id;
-            }
-
-            OnStateChanged();
-        };
+        run.ServerCombo.SelectionChanged += (_, _) => OnStateChanged();
         presets.NameBox.TextChanged += (_, _) => OnStateChanged();
         SeedHotkeyKeys();
         ApplyHotkeySettings(HotkeySettings.CreateDefault());
@@ -265,12 +257,18 @@ internal sealed partial class LeptaController
 
     public void HandleServerSelectionChanged()
     {
+        if (run.ServerCombo.SelectedItem is VllmServerConfiguration server)
+        {
+            preferredServerId = server.Id;
+        }
+
         if (isBusy)
         {
+            CancelCurrentRun();
             return;
         }
 
-        var server = run.ServerCombo.SelectedItem as VllmServerConfiguration;
+        server = run.ServerCombo.SelectedItem as VllmServerConfiguration;
         if (server is null)
         {
             run.RunButton.IsEnabled = false;
@@ -627,6 +625,7 @@ internal sealed partial class LeptaController
             runCompletion.TrySetResult(true);
 
             SetBusyState(false, run.StatusText.Text);
+            HandleServerSelectionChanged();
             ThroughputCompleted?.Invoke();
         }
     }

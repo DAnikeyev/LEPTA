@@ -573,13 +573,13 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
 
     private void LeptaServerCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        leptaController?.HandleServerSelectionChanged();
         if (LeptaServerCombo.SelectedItem is VllmServerConfiguration server)
         {
             modelsController?.SelectServer(server.Id);
             chatController?.HandleServerSelectionChanged();
         }
 
-        leptaController?.HandleServerSelectionChanged();
         QueueClipboardCachePrefillFromCurrentClipboard();
     }
 
@@ -1101,9 +1101,15 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
         completionTimer.Tick += (_, _) =>
         {
             completionTimer.Stop();
+
+            // Clear all transforms before reordering the collection so panels
+            // are at their rest positions when the ItemsControl regenerates
+            // containers — this prevents the visible jump between the animated
+            // offset and the new layout position.
+            ResetVisibleLeptaPanelTransforms(animate: false);
+
             leptaController?.MovePanelToIndex(panelId, targetIndex);
             UpdateLeptaPanelsLayout();
-            _ = Dispatcher.InvokeAsync(() => ResetVisibleLeptaPanelTransforms(animate: true), DispatcherPriority.Loaded);
         };
         completionTimer.Start();
 
@@ -3155,6 +3161,7 @@ leptaController.LoadDashboards(dashboardResult.Value, settingsResult.Value.Defau
 
         Show();
         Activate();
+        LeptaTabButton.IsChecked = true;
         if (leptaController is not null)
         {
             await leptaController.RunFromClipboardAsync();
