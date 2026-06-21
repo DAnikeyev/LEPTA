@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0] - 2026-06-21
+- Added OpenRouter as a server provider, enabling cloud-hosted models alongside the local vLLM server.
+- Added automatic tab switching when a panel run starts or completes.
+- Refactored the vLLM server model into separate configuration, runtime state, calculations, and status models.
+- Split the Models controller into Configuration, Selection, Actions, and Views partials and added a server-profile form mapper.
+- Expanded server-profile validation and added the corresponding tests.
+- Embedded the release version (derived from the git tag) into the published build.
+
 ## [0.1.0] - 2026-06-10
 - Added a GitHub Actions release workflow to build, test, and publish release artifacts on tag push.
 - Improved Mermaid troubleshooting, rendering normalization, and diagnostics stability across controllers and services.

@@ -26,6 +26,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Resources\logo_removeBG.ico</ApplicationIcon>
+    <!-- Default version for local builds; the release workflow overrides this
+         from the git tag via -p:Version. AssemblyVersion/FileVersion must be
+         four-part, so set them explicitly for local builds too. -->
+    <Version>0.0.0-dev</Version>
+    <AssemblyVersion>0.0.0.0</AssemblyVersion>
+    <FileVersion>0.0.0.0</FileVersion>
   </PropertyGroup>
 
 </Project>
