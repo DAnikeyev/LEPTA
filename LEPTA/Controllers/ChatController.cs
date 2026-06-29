@@ -262,6 +262,7 @@ internal sealed partial class ChatController
         string? servedModelName = null;
         var resolvedSystemPrompt = ResolveSystemInstruction();
         var requestOptions = CreateRequestOptions(selectedServer);
+        var responseMaxTokens = Math.Min(ChatResponseMaxTokens, selectedServer.MaxOutputTokens);
         var sendStopwatch = Stopwatch.StartNew();
         PublishAction($"Sending chat prompt to '{selectedServer.Name}'.");
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -291,9 +292,10 @@ internal sealed partial class ChatController
                 prompt,
                 token => AppendMessageText(assistantBubble, token),
                 systemPrompt: resolvedSystemPrompt,
-                maxTokens: ChatResponseMaxTokens,
+                maxTokens: responseMaxTokens,
                 requestOptions: requestOptions,
                 requestOverrides: selectedServer.RequestOverrides,
+                maxContextTokens: selectedServer.MaxContextTokens,
                 cancellationToken: linkedCancellation.Token);
 
             sendStopwatch.Stop();

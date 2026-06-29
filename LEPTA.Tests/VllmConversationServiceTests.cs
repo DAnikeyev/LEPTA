@@ -82,6 +82,62 @@ public sealed class VllmConversationServiceTests
     }
 
     [Test]
+    public async Task SendAsync_TrimsRequestHistoryToMaxContextTokens_WhilePreservingLocalConversation()
+    {
+        string? capturedBody = null;
+
+        using var http = new HttpClient(new StubHttpMessageHandler(async request =>
+        {
+            capturedBody = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "Trimmed safely."
+                          }
+                        }
+                      ],
+                      "usage": {
+                        "completion_tokens": 4
+                      }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }))
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        var service = new VllmConversationService(new VllmChatCompletionClient(http));
+        var result = await service.SendAsync(
+            "http://localhost:8512",
+            "Qwen3.5-9B-local",
+            [
+                new VllmChatMessage("user", new string('o', 16)),
+                new VllmChatMessage("assistant", new string('k', 16))
+            ],
+            new string('n', 8),
+            "sys",
+            maxContextTokens: 8);
+
+        Assert.That(capturedBody, Is.Not.Null);
+        using var payload = JsonDocument.Parse(capturedBody!);
+        var messages = payload.RootElement.GetProperty("messages");
+        Assert.That(messages.GetArrayLength(), Is.EqualTo(3));
+        Assert.That(messages[0].GetProperty("role").GetString(), Is.EqualTo("system"));
+        Assert.That(messages[1].GetProperty("role").GetString(), Is.EqualTo("assistant"));
+        Assert.That(messages[2].GetProperty("role").GetString(), Is.EqualTo("user"));
+        Assert.That(result.AssistantText, Is.EqualTo("Trimmed safely."));
+        Assert.That(result.Conversation.Select(message => message.Role), Is.EqualTo(["user", "assistant", "user", "assistant"]));
+    }
+
+    [Test]
     public async Task SendAsync_FallsBackToPromptCompletion_WhenChatCompletionIsRejected()
     {
         var requestedPaths = new List<string>();
@@ -180,6 +236,23 @@ public sealed class VllmConversationServiceTests
             "What should LEPTA do next?");
 
         Assert.That(result.AssistantText, Is.EqualTo("Ready to help."));
+    }
+
+    [Test]
+    public void BuildRequestMessages_TrimsOversizedLatestMessage_WhenMaxContextTokensIsLimited()
+    {
+        var original = new string('x', 80);
+
+        var messages = VllmConversationService.BuildRequestMessages(
+            [new VllmChatMessage("user", original)],
+            "sys",
+            maxContextTokens: 15);
+
+        Assert.That(messages.Count, Is.EqualTo(2));
+        Assert.That(messages[0].Role, Is.EqualTo("system"));
+        Assert.That(messages[1].Role, Is.EqualTo("user"));
+        Assert.That(messages[1].Content.Length, Is.LessThan(original.Length));
+        Assert.That(messages[1].Content, Does.Contain("[Earlier content omitted to fit context]"));
     }
 
     [Test]
@@ -696,6 +769,5 @@ public sealed class VllmConversationServiceTests
         }
     }
 }
-
 
 

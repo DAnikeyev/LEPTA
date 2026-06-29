@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.1] - 2026-06-29
+- Fixed chat continuation from LEPTA panels becoming unresponsive when seeded prompts or responses grew too large for the selected model context.
+- Capped chat output tokens to the selected server profile and trimmed request history consistently across chat and prompt-fallback paths.
+- Added regression coverage for request-history trimming and oversized latest-message clipping.
+
 ## [0.2.0] - 2026-06-21
 - Added OpenRouter as a server provider, enabling cloud-hosted models alongside the local vLLM server.
 - Added automatic tab switching when a panel run starts or completes.

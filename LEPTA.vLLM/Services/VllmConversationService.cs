@@ -9,6 +9,7 @@ namespace LEPTA.vLLM.Services;
 
 public sealed class VllmConversationService(VllmChatCompletionClient chatCompletionClient, ILeptaLogger? logger = null)
 {
+    private const string OmittedContextMarker = "\n\n[Earlier content omitted to fit context]\n\n";
     public const string DefaultSystemPrompt = """
         Be precise, technical, and concise.
         Prioritize correctness over sounding confident.
@@ -32,6 +33,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
         ExternalRequestOverrides? requestOverrides = null,
+        int maxContextTokens = 0,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -50,7 +52,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
             var completion = await chatCompletionClient.CompleteChatAsync(
                 endpoint,
                 model,
-                BuildRequestMessages(updatedConversation, systemPrompt),
+                BuildRequestMessages(updatedConversation, systemPrompt, maxContextTokens),
                 maxTokens,
                 temperature,
                 requestOptions,
@@ -73,7 +75,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                 var completion = await chatCompletionClient.CompleteAsync(
                     endpoint,
                     model,
-                    BuildPromptFallback(updatedConversation, systemPrompt),
+                    BuildPromptFallback(updatedConversation, systemPrompt, maxContextTokens),
                     maxTokens,
                     temperature,
                     requestOverrides,
@@ -108,6 +110,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         double temperature = 0.2,
         VllmRequestOptions? requestOptions = null,
         ExternalRequestOverrides? requestOverrides = null,
+        int maxContextTokens = 0,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
@@ -121,7 +124,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
 
         logger.Log(nameof(VllmConversationService), $"Streaming conversational turn to model '{model}' at {endpoint.TrimEnd('/')}. priorMessages={conversation.Count}, systemPrompt={(!string.IsNullOrWhiteSpace(systemPrompt)).ToString().ToLowerInvariant()}, maxTokens={maxTokens}.");
         var stopwatch = Stopwatch.StartNew();
-        var requestMessages = BuildRequestMessages(updatedConversation, systemPrompt);
+        var requestMessages = BuildRequestMessages(updatedConversation, systemPrompt, maxContextTokens);
         var builder = new StringBuilder();
 
         var completionTokens = default(int?);
@@ -230,7 +233,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
                 var completion = await chatCompletionClient.CompleteAsync(
                     endpoint,
                     model,
-                    BuildPromptFallback(updatedConversation, systemPrompt),
+                    BuildPromptFallback(updatedConversation, systemPrompt, maxContextTokens),
                     maxTokens,
                     temperature,
                     requestOverrides,
@@ -262,17 +265,20 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
 
     public static IReadOnlyList<VllmChatMessage> BuildRequestMessages(
         IReadOnlyList<VllmChatMessage> conversation,
-        string systemPrompt = DefaultSystemPrompt)
+        string systemPrompt = DefaultSystemPrompt,
+        int maxContextTokens = 0)
     {
         ArgumentNullException.ThrowIfNull(conversation);
 
-        var requestMessages = new List<VllmChatMessage>(conversation.Count + 1);
-        if (!string.IsNullOrWhiteSpace(systemPrompt))
+        var normalizedSystemPrompt = string.IsNullOrWhiteSpace(systemPrompt) ? null : systemPrompt.Trim();
+        var requestConversation = TrimConversationToContextWindow(conversation, normalizedSystemPrompt, maxContextTokens);
+        var requestMessages = new List<VllmChatMessage>(requestConversation.Count + 1);
+        if (!string.IsNullOrWhiteSpace(normalizedSystemPrompt))
         {
-            requestMessages.Add(new VllmChatMessage("system", systemPrompt.Trim()));
+            requestMessages.Add(new VllmChatMessage("system", normalizedSystemPrompt));
         }
 
-        requestMessages.AddRange(conversation.Where(message => !string.IsNullOrWhiteSpace(message.Content)));
+        requestMessages.AddRange(requestConversation);
         return requestMessages;
     }
 
@@ -388,8 +394,9 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
             usedPromptFallback);
     }
 
-    private static string BuildPromptFallback(IReadOnlyList<VllmChatMessage> conversation, string systemPrompt)
+    private static string BuildPromptFallback(IReadOnlyList<VllmChatMessage> conversation, string systemPrompt, int maxContextTokens = 0)
     {
+        var requestConversation = TrimConversationToContextWindow(conversation, systemPrompt, maxContextTokens);
         var builder = new StringBuilder();
 
         if (!string.IsNullOrWhiteSpace(systemPrompt))
@@ -402,7 +409,7 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         builder.AppendLine("Conversation:");
         builder.AppendLine();
 
-        foreach (var message in conversation)
+        foreach (var message in requestConversation)
         {
             builder.AppendLine($"{GetRoleLabel(message.Role)}:");
             builder.AppendLine(message.Content.Trim());
@@ -417,6 +424,82 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         => string.IsNullOrWhiteSpace(text)
             ? "(No content returned by the server.)"
             : text.Trim();
+
+    private static IReadOnlyList<VllmChatMessage> TrimConversationToContextWindow(
+        IReadOnlyList<VllmChatMessage> conversation,
+        string? systemPrompt,
+        int maxContextTokens)
+    {
+        var normalizedConversation = conversation
+            .Where(message => !string.IsNullOrWhiteSpace(message.Content))
+            .ToArray();
+
+        if (normalizedConversation.Length == 0 || maxContextTokens <= 0)
+        {
+            return normalizedConversation;
+        }
+
+        var availableConversationTokens = Math.Max(
+            1,
+            maxContextTokens - EstimateTokenCount(systemPrompt));
+        var selected = new List<VllmChatMessage>(normalizedConversation.Length);
+        var remainingTokens = availableConversationTokens;
+
+        for (var index = normalizedConversation.Length - 1; index >= 0; index--)
+        {
+            var message = normalizedConversation[index];
+            var messageTokens = EstimateTokenCount(message.Content);
+            if (messageTokens <= remainingTokens)
+            {
+                selected.Add(message);
+                remainingTokens -= messageTokens;
+                continue;
+            }
+
+            if (selected.Count == 0)
+            {
+                selected.Add(new VllmChatMessage(message.Role, TrimMessageContent(message.Content, remainingTokens)));
+            }
+
+            break;
+        }
+
+        selected.Reverse();
+        return selected;
+    }
+
+    private static string TrimMessageContent(string content, int tokenBudget)
+    {
+        var normalizedContent = content.Trim();
+        if (string.IsNullOrEmpty(normalizedContent))
+        {
+            return string.Empty;
+        }
+
+        var characterBudget = Math.Max(LeptaRequestOrchestrator.EstimatedCharactersPerToken, tokenBudget * LeptaRequestOrchestrator.EstimatedCharactersPerToken);
+        if (normalizedContent.Length <= characterBudget)
+        {
+            return normalizedContent;
+        }
+
+        if (characterBudget <= OmittedContextMarker.Length)
+        {
+            return normalizedContent[^characterBudget..];
+        }
+
+        var remainingCharacters = characterBudget - OmittedContextMarker.Length;
+        var headLength = remainingCharacters / 2;
+        var tailLength = remainingCharacters - headLength;
+        return string.Concat(
+            normalizedContent[..headLength],
+            OmittedContextMarker,
+            normalizedContent[^tailLength..]);
+    }
+
+    private static int EstimateTokenCount(string? text)
+        => string.IsNullOrWhiteSpace(text)
+            ? 0
+            : (int)Math.Ceiling(text.Trim().Length / (double)LeptaRequestOrchestrator.EstimatedCharactersPerToken);
 
     private static bool ShouldFallbackToTextCompletion(InvalidOperationException exception)
     {
@@ -456,7 +539,6 @@ public sealed class VllmConversationService(VllmChatCompletionClient chatComplet
         double TokensPerSecond,
         bool UsedPromptFallback);
 }
-
 
 
 
