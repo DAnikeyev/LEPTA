@@ -719,7 +719,7 @@
                         <DockPanel>
                             <Button DockPanel.Dock="Bottom" Content="+ Add model" Height="38" Margin="0,12,0,0" Click="AddModelButton_Click" />
                             <Grid>
-                                <ListBox x:Name="ModelsList" ItemTemplate="{StaticResource ModelServerProfileTemplate}" SelectionChanged="ModelsList_SelectionChanged" PreviewMouseLeftButtonDown="ModelsList_PreviewMouseLeftButtonDown" />
+                                <ListBox x:Name="ModelsList" ItemTemplate="{StaticResource ModelServerProfileTemplate}" SelectionChanged="ModelsList_SelectionChanged" PreviewMouseLeftButtonDown="ModelsList_PreviewMouseLeftButtonDown" ScrollViewer.HorizontalScrollBarVisibility="Auto" />
                                 <Border Background="{DynamicResource PanelBackgroundAltBrush}"
                                         BorderBrush="{DynamicResource BorderBrushTheme}"
                                         BorderThickness="1"

@@ -2,6 +2,10 @@
 
 LEPTA is a Windows desktop tool that runs **multiple specialized prompts in parallel** against a local vLLM server, using **shared prefix KV caching** to make parallel inference nearly as fast as a single request.
 
+## Screenshot
+
+![LEPTA app screenshot](docs/images/lepta-screenshot.png)
+
 ## What it actually does
 
 You copy text to the clipboard, hit a hotkey, and LEPTA sends N panel prompts to your local model at the same time. Each panel gets the same source document plus its own instruction (summary, risks, action items, code review, etc.). All panels share a single system prompt and source text prefix, so vLLM computes the KV cache once and reuses it across every parallel request. The result is N specialized answers delivered side-by-side in one shot.
@@ -29,8 +33,20 @@ vLLM stores the key-value state for the shared prefix (system instructions + sou
 
 1. Start a vLLM server on `http://localhost:8512` (or add your own profile).
 2. Open LEPTA, select a dashboard or create one.
-3. Copy text, press congihurable hotkey (or the run button).
+3. Copy text, press configurable hotkey (or the run button).
 4. Read the parallel panel outputs.
+
+## Using with QuadClick
+
+[QuadClick](https://github.com/DAnikeyev/QuadClick) pairs well with LEPTA for webpage analysis workflows.
+
+Typical flow:
+
+1. In the browser, use QuadClick to copy the current UI element, block, or selected page fragment.
+2. Switch to LEPTA and run your dashboard with the hotkey or run button.
+3. Review the copied element in parallel panels such as summary, UX review, risks, rewrite suggestions, or action items.
+
+This makes a simple **copy element -> Analyze using LEPTA** workflow for inspecting webpages, prompts, documentation, or app screens with multiple specialized perspectives at once.
 
 ## Download
 

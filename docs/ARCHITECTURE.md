@@ -4,10 +4,7 @@ This document explains how the current LEPTA codebase is organized and how the m
 
 ## 1. Product shape
 
-LEPTA is a WPF desktop application centered around two main experiences:
-
-1. **Chat**: a conversational interface for testing a selected vLLM-compatible server.
-2. **LEPTA**: a dashboard that fans one source text out into multiple parallel panel requests.
+LEPTA is a WPF desktop application centered around a dashboard that fans one source text out into multiple parallel panel requests.
 
 The current implementation is intentionally biased toward the **external HTTP server workflow**:
 

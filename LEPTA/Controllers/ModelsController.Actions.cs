@@ -199,7 +199,11 @@ internal sealed partial class ModelsController
 
     public async Task RefreshAllServerStatusesAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var server in servers)
+        // Snapshot before iterating: each await yields back to the UI thread, where the
+        // user can add/delete a profile and mutate `servers`. Enumerating the live
+        // ObservableCollection across an await would then throw "Collection was modified"
+        // out of the async-void Window_Loaded handler and terminate the process.
+        foreach (var server in servers.ToArray())
         {
             await RefreshServerStatusAsync(server, cancellationToken);
         }
@@ -412,6 +416,13 @@ internal sealed partial class ModelsController
 
     private async Task RefreshServerStatusAsync(VllmServerConfiguration server, CancellationToken cancellationToken)
     {
+        // The server may have been deleted while a previous probe was in flight; skip the
+        // orphaned object instead of probing/refreshing a profile that is no longer listed.
+        if (!servers.Contains(server))
+        {
+            return;
+        }
+
         if (currentActionCancellation is not null && ReferenceEquals(server, SelectedServer))
         {
             return;
